@@ -596,6 +596,10 @@ static edata_t *
 extent_recycle(tsdn_t *tsdn, pac_t *pac, ehooks_t *ehooks, ecache_t *ecache,
     edata_t *expand_edata, size_t size, size_t alignment, bool zero,
     bool *commit, bool growing_retained, bool guarded) {
+	// TODO: Modify jemalloc recycling to respect lifespan classification.
+    // - If a huge page was used for short-lived allocations, prioritize recycling it.
+    // - If a huge page contained mostly long-lived allocations, keep it allocated longer.
+
 	witness_assert_depth_to_rank(tsdn_witness_tsdp_get(tsdn),
 	    WITNESS_RANK_CORE, growing_retained ? 1 : 0);
 	assert(!guarded || expand_edata == NULL);
@@ -968,6 +972,10 @@ extent_dalloc_gap(tsdn_t *tsdn, pac_t *pac, ehooks_t *ehooks,
 static bool
 extent_dalloc_wrapper_try(tsdn_t *tsdn, pac_t *pac, ehooks_t *ehooks,
     edata_t *edata) {
+	// TODO: Track lifespan misclassification and enforce proper deallocation strategy.
+    // - If a page was misclassified (lived longer than expected), adjust its LC.
+    // - If an extent is still partially occupied, determine whether to keep or free it.
+
 	bool err;
 
 	assert(edata_base_get(edata) != NULL);
@@ -1149,6 +1157,11 @@ extent_purge_lazy_wrapper(tsdn_t *tsdn, ehooks_t *ehooks, edata_t *edata,
 static bool
 extent_purge_forced_impl(tsdn_t *tsdn, ehooks_t *ehooks, edata_t *edata,
     size_t offset, size_t length, bool growing_retained) {
+	// TODO: Implement lifespan-aware huge page reclamation.
+    // - If a huge page has exceeded its LC deadline, purge it.
+    // - If most allocations are short-lived and the page is underutilized, recycle it early.
+    // - Track statistics on reclaimed huge pages.
+
 	witness_assert_depth_to_rank(tsdn_witness_tsdp_get(tsdn),
 	    WITNESS_RANK_CORE, growing_retained ? 1 : 0);
 	bool err = ehooks_purge_forced(tsdn, ehooks, edata_base_get(edata),

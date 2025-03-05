@@ -301,6 +301,11 @@ base_block_alloc(tsdn_t *tsdn, base_t *base, ehooks_t *ehooks, unsigned ind,
  */
 static edata_t *
 base_extent_alloc(tsdn_t *tsdn, base_t *base, size_t size, size_t alignment) {
+	// TODO: Modify this function to allocate pages based on lifespan.
+    // - If lifespan is predicted as short, allocate from the "short-lived" pool.
+    // - If lifespan is predicted as long, allocate from the "long-lived" pool.
+    // - Track allocation timestamps for later analysis.
+	
 	malloc_mutex_assert_owner(tsdn, &base->mtx);
 
 	ehooks_t *ehooks = base_ehooks_get_for_metadata(base);

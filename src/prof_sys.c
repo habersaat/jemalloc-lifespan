@@ -276,6 +276,10 @@ prof_backtrace_impl(void **vec, unsigned *len, unsigned max_len) {
 
 void
 prof_backtrace(tsd_t *tsd, prof_bt_t *bt) {
+	// TODO: Capture stack trace for each allocation.
+    // - Store stack trace and allocation size for offline lifespan analysis.
+    // - Write to a log file (/tmp/jemalloc_lc_log.csv).
+	
 	cassert(config_prof);
 	prof_backtrace_hook_t prof_backtrace_hook = prof_backtrace_hook_get();
 	assert(prof_backtrace_hook != NULL);

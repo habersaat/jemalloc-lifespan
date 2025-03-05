@@ -1853,6 +1853,10 @@ stats_print_helper(emitter_t *emitter, bool merged, bool destroyed,
 
 void
 stats_print(write_cb_t *write_cb, void *cbopaque, const char *opts) {
+	// TODO: Print lifespan-aware fragmentation statistics.
+    // - Report % of huge pages used by each LC category.
+    // - Show misclassification rates (how often an allocation's LC was wrong).
+	
 	int err;
 	uint64_t epoch;
 	size_t u64sz;

@@ -30,6 +30,11 @@ percpu_arena_update(tsd_t *tsd, unsigned cpu) {
 /* Choose an arena based on a per-thread value. */
 static inline arena_t *
 arena_choose_impl(tsd_t *tsd, arena_t *arena, bool internal) {
+	// TODO: Hook into this function to classify allocations by lifespan.
+    // - Extract stack trace (for offline training).
+    // - Use precomputed LC mapping (if available) to select the appropriate arena.
+    // - If no mapping exists, fall back to default jemalloc behavior.
+	
 	arena_t *ret;
 
 	if (arena != NULL) {

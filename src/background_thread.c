@@ -354,6 +354,11 @@ check_background_thread_creation(tsd_t *tsd, unsigned *n_created,
 
 static void
 background_thread0_work(tsd_t *tsd) {
+	// TODO: Implement lifespan-aware huge page reclamation.
+    // - Scan huge pages and check if they are past their LC deadline.
+    // - If a huge page is mostly free, use MADV_FREE / MADV_DONTNEED to release memory.
+    // - Track statistics on how often huge pages are recycled.
+	
 	/* Thread0 is also responsible for launching / terminating threads. */
 	VARIABLE_ARRAY(bool, created_threads, max_background_threads);
 	unsigned i;
