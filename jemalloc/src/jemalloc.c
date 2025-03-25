@@ -2477,6 +2477,10 @@ compute_size_with_overflow(bool may_overflow, dynamic_opts_t *dopts,
 
 JEMALLOC_ALWAYS_INLINE int
 imalloc_body(static_opts_t *sopts, dynamic_opts_t *dopts, tsd_t *tsd) {
+
+	printf("HELLO_FROM_JEMALLOC\n");
+	fflush(stdout);
+
 	/* Where the actual allocated memory will live. */
 	void *allocation = NULL;
 	/* Filled in by compute_size_with_overflow below. */
@@ -2601,6 +2605,12 @@ imalloc_body(static_opts_t *sopts, dynamic_opts_t *dopts, tsd_t *tsd) {
 	/* Success! */
 	check_entry_exit_locking(tsd_tsdn(tsd));
 	*dopts->result = allocation;
+
+	// ---------- LOG ALLOCATION TO CONSOLE ---------
+	printf("[jemalloc] malloc: ptr=%p size=%zu\n", *dopts->result, dopts->usize);
+	fflush(stdout);
+	// ---------------------------------------
+
 	return 0;
 
 label_oom:
