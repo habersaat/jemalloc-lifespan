@@ -18,6 +18,7 @@
  * to free up the low bits in the rtree leaf.
  */
 #define EDATA_ALIGNMENT 128
+#define EDATA_LIFETIME_DEFAULT -1
 
 enum extent_state_e {
 	extent_state_active   = 0,
@@ -140,6 +141,7 @@ struct edata_s {
 	 * bin_shard: the shard of the bin from which this extent came.
 	 */
 	uint64_t		e_bits;
+	uint8_t lifespan_class;
 #define MASK(CURRENT_FIELD_WIDTH, CURRENT_FIELD_SHIFT) ((((((uint64_t)0x1U) << (CURRENT_FIELD_WIDTH)) - 1)) << (CURRENT_FIELD_SHIFT))
 
 #define EDATA_BITS_ARENA_WIDTH  MALLOCX_ARENA_BITS
@@ -583,6 +585,21 @@ edata_is_head_set(edata_t *edata, bool is_head) {
 	    ((uint64_t)is_head << EDATA_BITS_IS_HEAD_SHIFT);
 }
 
+static inline void
+edata_lifetime_set_default(edata_t *edata) {
+	edata->lifespan_class = EDATA_LIFETIME_DEFAULT;
+}
+
+static inline uint8_t
+edata_lifespan_get(const edata_t *edata) {
+	return edata->lifespan_class;
+}
+
+static inline void
+edata_lifespan_set(edata_t *edata, uint8_t class_id) {
+	edata->lifespan_class = class_id;
+}
+
 static inline bool
 edata_state_in_transition(extent_state_t state) {
 	return state >= extent_state_transition;
@@ -616,6 +633,7 @@ edata_init(edata_t *edata, unsigned arena_ind, void *addr, size_t size,
 	if (config_prof) {
 		edata_prof_tctx_set(edata, NULL);
 	}
+	edata_lifetime_set_default(edata);
 }
 
 static inline void

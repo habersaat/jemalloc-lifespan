@@ -26,6 +26,7 @@
 #include "jemalloc/internal/thread_event.h"
 #include "jemalloc/internal/util.h"
 
+
 /******************************************************************************/
 /* Data. */
 
@@ -2606,10 +2607,21 @@ imalloc_body(static_opts_t *sopts, dynamic_opts_t *dopts, tsd_t *tsd) {
 	check_entry_exit_locking(tsd_tsdn(tsd));
 	*dopts->result = allocation;
 
-	// ---------- LOG ALLOCATION TO CONSOLE ---------
-	printf("[jemalloc] malloc: ptr=%p size=%zu\n", *dopts->result, dopts->usize);
-	fflush(stdout);
-	// ---------------------------------------
+	// Assign a dummy lifetime class (this will be replaced with ML prediction later)
+	const int NUM_LIFESPAN_CLASSES = 3;
+	uint8_t predicted_lifespan_class = (uint8_t)(rand() % NUM_LIFESPAN_CLASSES);
+
+	edata_t *edata = emap_edata_lookup(tsd_tsdn(tsd),
+                                   &arena_emap_global,
+                                   *dopts->result);
+	if (edata != NULL) {
+		edata_lifespan_set(edata, predicted_lifespan_class);
+		printf("[jemalloc] malloc: ptr=%p size=%zu lifespan_class=%u\n",
+			*dopts->result, dopts->usize, (unsigned)edata->lifespan_class);
+		fflush(stdout);
+	}
+
+
 
 	return 0;
 
