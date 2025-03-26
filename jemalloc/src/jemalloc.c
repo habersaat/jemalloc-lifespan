@@ -2608,7 +2608,6 @@ imalloc_body(static_opts_t *sopts, dynamic_opts_t *dopts, tsd_t *tsd) {
 	*dopts->result = allocation;
 
 	// Assign a dummy lifetime class (this will be replaced with ML prediction later)
-	const int NUM_LIFESPAN_CLASSES = 3;
 	uint8_t predicted_lifespan_class = (uint8_t)(rand() % NUM_LIFESPAN_CLASSES);
 
 	edata_t *edata = emap_edata_lookup(tsd_tsdn(tsd),

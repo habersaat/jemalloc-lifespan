@@ -12,6 +12,8 @@
 #include "jemalloc/internal/pai.h"
 #include "jemalloc/internal/sec.h"
 
+#define NUM_LIFESPAN_CLASSES 3
+
 /*
  * The page allocator; responsible for acquiring pages of memory for
  * allocations.  It picks the implementation of the page allocator interface
@@ -116,6 +118,9 @@ struct pa_shard_s {
 
 	/* The base from which we get the ehooks and allocate metadat. */
 	base_t *base;
+
+	/* Add a per-lifespan array of ecache_t */
+	ecache_t lifespan_reuse[NUM_LIFESPAN_CLASSES];
 };
 
 static inline bool

@@ -61,6 +61,15 @@ pa_shard_init(tsdn_t *tsdn, pa_shard_t *shard, pa_central_t *central,
 	shard->emap = emap;
 	shard->base = base;
 
+	/* Initialize the lifespan reuse caches. */
+	for (int i = 0; i < NUM_LIFESPAN_CLASSES; i++) {
+		ecache_init(tsdn,
+					&shard->lifespan_reuse[i],
+					extent_state_retained,
+					ind,    // arena index
+					false); // delay_coalesce 
+	}
+
 	return false;
 }
 
