@@ -18,7 +18,7 @@
  * to free up the low bits in the rtree leaf.
  */
 #define EDATA_ALIGNMENT 128
-#define EDATA_LIFETIME_DEFAULT -1
+#define EDATA_LIFETIME_DEFAULT ((uint8_t)255)
 
 enum extent_state_e {
 	extent_state_active   = 0,

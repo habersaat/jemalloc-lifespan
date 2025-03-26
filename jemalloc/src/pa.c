@@ -214,6 +214,29 @@ pa_shrink(tsdn_t *tsdn, pa_shard_t *shard, edata_t *edata, size_t old_size,
 void
 pa_dalloc(tsdn_t *tsdn, pa_shard_t *shard, edata_t *edata,
     bool *deferred_work_generated) {
+
+	printf("[jemalloc] Deallocating extent for large alloc of size %zu\n",
+		edata_size_get(edata));
+
+	/* Try to recycle based on lifespan class. */
+	if (edata->lifespan_class != EDATA_LIFETIME_DEFAULT) {
+		ecache_t *reuse_cache = &shard->lifespan_reuse[edata->lifespan_class];
+
+		printf("[jemalloc] Placed deallocation into reuse cache for lifespan class %u\n",
+			(unsigned)edata->lifespan_class);
+		fflush(stdout);
+
+		ecache_dalloc(tsdn, &shard->pac,
+					pa_shard_ehooks_get(shard),
+					reuse_cache, edata);
+
+		if (deferred_work_generated != NULL) {
+			*deferred_work_generated = false;
+		}
+		return;
+	}
+
+
 	emap_remap(tsdn, shard->emap, edata, SC_NSIZES, /* slab */ false);
 	if (edata_slab_get(edata)) {
 		emap_deregister_interior(tsdn, shard->emap, edata);
