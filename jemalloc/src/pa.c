@@ -127,15 +127,119 @@ pa_get_pai(pa_shard_t *shard, edata_t *edata) {
 	    ? &shard->pac.pai : &shard->hpa_sec.pai);
 }
 
+#define HUGEPAGE_SIZE ((size_t)(2 * 1024 * 1024))  // 2MB default hugepage size
+
+static edata_t *
+try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
+                         uint8_t lifespan_class, size_t size,
+                         size_t alignment, bool zero) {
+	assert(lifespan_class < NUM_LIFESPAN_CLASSES);
+	lifespan_block_allocator_t *block = &shard->lifespan_blocks[lifespan_class];
+
+	while (true) {
+		if (block->current_block != NULL) {
+			// Only slice from blocks tagged with the correct class
+			if (edata_lifespan_get(block->current_block) != lifespan_class) {
+				printf("[jemalloc] ⚠️ Lifespan mismatch — discarding current block for class %u\n", lifespan_class);
+				block->current_block = NULL;
+				continue;
+			}
+
+			size_t base = (size_t)edata_base_get(block->current_block);
+			size_t aligned_offset = ALIGNMENT_CEILING(block->offset, alignment);
+
+			if (aligned_offset + size <= edata_size_get(block->current_block)) {
+				void *slice_addr = (void *)(base + aligned_offset);
+				edata_t *slice = edata_cache_get(tsdn, &shard->edata_cache);
+				if (slice == NULL) {
+					return NULL;
+				}
+
+				edata_init(slice, shard->ind, slice_addr, size, /* paddings */ false,
+				           EXTENT_PAI_PAC, extent_state_active,
+				           zero, false, false, false,
+				           shard->ind);
+
+				edata_lifespan_set(slice, lifespan_class);
+				block->offset = aligned_offset + size;
+
+				return slice;
+			}
+
+			// ✅ Block exhausted — clear and retry
+			printf("[jemalloc] ℹ️ Lifespan block for class %u exhausted, allocating new\n", lifespan_class);
+			block->current_block = NULL;
+			continue;
+		}
+
+		// ✅ Allocate a fresh 2MB block
+		edata_t *new_block = pai_alloc(tsdn, &shard->pac.pai,
+		                               HUGEPAGE_SIZE, HUGEPAGE_SIZE,
+		                               zero, /* guarded */ false,
+		                               /* slab */ false,
+		                               /* deferred_work */ NULL);
+		if (new_block == NULL) {
+			return NULL;
+		}
+
+		assert(((uintptr_t)edata_base_get(new_block) & (HUGEPAGE_SIZE - 1)) == 0);
+		edata_lifespan_set(new_block, lifespan_class);
+		block->current_block = new_block;
+		block->offset = 0;
+
+		printf("[jemalloc] Allocated new 2MB block for lifespan class %u at %p\n",
+		       lifespan_class, edata_base_get(new_block));
+	}
+}
+
+
 edata_t *
 pa_alloc(tsdn_t *tsdn, pa_shard_t *shard, size_t size, size_t alignment,
     bool slab, szind_t szind, bool zero, bool guarded,
+    uint8_t lifespan_class,
     bool *deferred_work_generated) {
 	witness_assert_depth_to_rank(tsdn_witness_tsdp_get(tsdn),
 	    WITNESS_RANK_CORE, 0);
 	assert(!guarded || alignment <= PAGE);
 
 	edata_t *edata = NULL;
+
+	/* Try slicing from lifespan block if not slab and lifespan is set */
+	if (!slab && lifespan_class != EDATA_LIFETIME_DEFAULT) {
+		printf("[jemalloc] Trying lifespan block slice for class %u, size: %zu\n",
+			lifespan_class, size);
+
+		edata = try_lifespan_block_alloc(tsdn, shard, lifespan_class, size, alignment, zero);
+
+		if (edata != NULL) {
+			printf("[jemalloc] ✅ Reused slice from lifespan block class %u at %p\n",
+				lifespan_class, edata_base_get(edata));
+			fflush(stdout);
+		} else {
+			printf("[jemalloc] ❌ Slicing failed for class %u — falling back to reuse/ecache\n",
+				lifespan_class);
+			fflush(stdout);
+		}
+	}
+
+	/* Try reuse pool for matching lifespan class — ONLY if slicing failed */
+	if (edata == NULL && lifespan_class != EDATA_LIFETIME_DEFAULT) {
+		printf("[jemalloc] ♻️  Trying reuse cache for lifespan class %u, size: %zu\n",
+			lifespan_class, size);
+
+		ecache_t *reuse_cache = &shard->lifespan_reuse[lifespan_class];
+		edata = ecache_alloc(tsdn,
+			&shard->pac,
+			pa_shard_ehooks_get(shard),
+			reuse_cache, NULL,
+			size, alignment, zero, guarded);
+
+		if (edata != NULL) {
+			printf("[jemalloc] ✅ Reused full extent from reuse cache class %u\n", lifespan_class);
+			fflush(stdout);
+		}
+	}
+
 	if (!guarded && pa_shard_uses_hpa(shard)) {
 		edata = pai_alloc(tsdn, &shard->hpa_sec.pai, size, alignment,
 		    zero, /* guarded */ false, slab, deferred_work_generated);
@@ -158,6 +262,13 @@ pa_alloc(tsdn_t *tsdn, pa_shard_t *shard, size_t size, size_t alignment,
 			emap_register_interior(tsdn, shard->emap, edata, szind);
 		}
 		assert(edata_arena_ind_get(edata) == shard->ind);
+
+		// TEMP: log to temp log file for testing
+		FILE *f = fopen("./tmp/alloc_classes.log", "a");
+		if (f != NULL) {
+			fprintf(f, "%p %u\n", edata_addr_get(edata), lifespan_class);
+			fclose(f);
+		}
 	}
 	return edata;
 }

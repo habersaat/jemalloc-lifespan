@@ -52,6 +52,16 @@ struct pa_shard_stats_s {
 };
 
 /*
+ * The block allocator for lifespan classes.  This is a simple allocator that
+ * allocates blocks of memory for a given lifespan class, and hands out pointers
+ * to the blocks.  It's used for the lifespan reuse caches.
+ */
+typedef struct lifespan_block_allocator_s {
+	edata_t *current_block;
+	size_t offset;
+} lifespan_block_allocator_t;
+
+/*
  * The local allocator handle.  Keeps the state necessary to satisfy page-sized
  * allocations.
  *
@@ -121,6 +131,9 @@ struct pa_shard_s {
 
 	/* Add a per-lifespan array of ecache_t */
 	ecache_t lifespan_reuse[NUM_LIFESPAN_CLASSES];
+
+	/* Per-lifespan block allocators for fine-grained page placement */
+	lifespan_block_allocator_t lifespan_blocks[NUM_LIFESPAN_CLASSES];
 };
 
 static inline bool
@@ -171,8 +184,9 @@ void pa_shard_reset(tsdn_t *tsdn, pa_shard_t *shard);
 void pa_shard_destroy(tsdn_t *tsdn, pa_shard_t *shard);
 
 /* Gets an edata for the given allocation. */
-edata_t *pa_alloc(tsdn_t *tsdn, pa_shard_t *shard, size_t size,
-    size_t alignment, bool slab, szind_t szind, bool zero, bool guarded,
+edata_t *pa_alloc(tsdn_t *tsdn, pa_shard_t *shard, size_t size, size_t alignment,
+    bool slab, szind_t szind, bool zero, bool guarded,
+    uint8_t lifespan_class,
     bool *deferred_work_generated);
 /* Returns true on error, in which case nothing changed. */
 bool pa_expand(tsdn_t *tsdn, pa_shard_t *shard, edata_t *edata, size_t old_size,

@@ -333,10 +333,16 @@ arena_extent_alloc_large(tsdn_t *tsdn, arena_t *arena, size_t usize,
 	szind_t szind = sz_size2index(usize);
 	size_t esize = usize + sz_large_pad;
 
+	printf("[jemalloc] arena_extent_alloc_large: usize=%zu esize=%zu\n", usize, esize);
+
+	// TEMP: Randomly assign a class for testing
+	uint8_t lifespan_class = rand() % NUM_LIFESPAN_CLASSES;
+
 	bool guarded = san_large_extent_decide_guard(tsdn,
 	    arena_get_ehooks(arena), esize, alignment);
 	edata_t *edata = pa_alloc(tsdn, &arena->pa_shard, esize, alignment,
-	    /* slab */ false, szind, zero, guarded, &deferred_work_generated);
+	    /* slab */ false, szind, zero, guarded,
+	    lifespan_class, &deferred_work_generated);
 	assert(deferred_work_generated == false);
 
 	if (edata != NULL) {
@@ -837,8 +843,10 @@ arena_slab_alloc(tsdn_t *tsdn, arena_t *arena, szind_t binind, unsigned binshard
 	bool guarded = san_slab_extent_decide_guard(tsdn,
 	    arena_get_ehooks(arena));
 	edata_t *slab = pa_alloc(tsdn, &arena->pa_shard, bin_info->slab_size,
-	    /* alignment */ PAGE, /* slab */ true, /* szind */ binind,
-	     /* zero */ false, guarded, &deferred_work_generated);
+    /* alignment */ PAGE, /* slab */ true, /* szind */ binind,
+    /* zero */ false, guarded,
+    EDATA_LIFETIME_DEFAULT,
+    &deferred_work_generated);
 
 	if (deferred_work_generated) {
 		arena_handle_deferred_work(tsdn, arena);

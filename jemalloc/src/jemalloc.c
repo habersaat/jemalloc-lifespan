@@ -2479,7 +2479,7 @@ compute_size_with_overflow(bool may_overflow, dynamic_opts_t *dopts,
 JEMALLOC_ALWAYS_INLINE int
 imalloc_body(static_opts_t *sopts, dynamic_opts_t *dopts, tsd_t *tsd) {
 
-	printf("HELLO_FROM_JEMALLOC\n");
+	printf("\nHELLO_FROM_JEMALLOC\n");
 	fflush(stdout);
 
 	/* Where the actual allocated memory will live. */
@@ -2607,20 +2607,7 @@ imalloc_body(static_opts_t *sopts, dynamic_opts_t *dopts, tsd_t *tsd) {
 	check_entry_exit_locking(tsd_tsdn(tsd));
 	*dopts->result = allocation;
 
-	// Assign a dummy lifetime class (this will be replaced with ML prediction later)
-	uint8_t predicted_lifespan_class = (uint8_t)(rand() % NUM_LIFESPAN_CLASSES);
-
-	edata_t *edata = emap_edata_lookup(tsd_tsdn(tsd),
-                                   &arena_emap_global,
-                                   *dopts->result);
-	if (edata != NULL) {
-		edata_lifespan_set(edata, predicted_lifespan_class);
-		printf("[jemalloc] malloc: ptr=%p size=%zu lifespan_class=%u\n",
-			*dopts->result, dopts->usize, (unsigned)edata->lifespan_class);
-		fflush(stdout);
-	}
-
-
+	// previously, we assigned dummy lifetime class here
 
 	return 0;
 
