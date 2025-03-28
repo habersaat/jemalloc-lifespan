@@ -166,13 +166,13 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 				return slice;
 			}
 
-			// ✅ Block exhausted — clear and retry
+			// Block exhausted — clear and retry
 			printf("[jemalloc] ℹ️ Lifespan block for class %u exhausted, allocating new\n", lifespan_class);
 			block->current_block = NULL;
 			continue;
 		}
 
-		// ✅ Allocate a fresh 2MB block
+		// Allocate a fresh 2MB block
 		edata_t *new_block = pai_alloc(tsdn, &shard->pac.pai,
 		                               HUGEPAGE_SIZE, HUGEPAGE_SIZE,
 		                               zero, /* guarded */ false,
