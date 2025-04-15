@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "background_thread_externs.h": "c",
+        "safety_check.h": "c",
+        "nstime.h": "c"
+    }
+}

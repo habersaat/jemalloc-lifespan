@@ -5,7 +5,7 @@
 #include <string.h>
 
 #define NUM_LIFESPAN_CLASSES 3
-#define NUM_ALLOCS_PER_CLASS 3
+#define NUM_ALLOCS_PER_CLASS 10
 #define ALLOC_LOG_PATH "tmp/alloc_classes.log"
 
 #define HUGEPAGE_SIZE (2 * 1024 * 1024)

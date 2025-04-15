@@ -142,6 +142,7 @@ struct edata_s {
 	 */
 	uint64_t		e_bits;
 	uint8_t lifespan_class;
+	uint64_t lifespan_timestamp_ns;
 #define MASK(CURRENT_FIELD_WIDTH, CURRENT_FIELD_SHIFT) ((((((uint64_t)0x1U) << (CURRENT_FIELD_WIDTH)) - 1)) << (CURRENT_FIELD_SHIFT))
 
 #define EDATA_BITS_ARENA_WIDTH  MALLOCX_ARENA_BITS
@@ -600,6 +601,16 @@ edata_lifespan_set(edata_t *edata, uint8_t class_id) {
 	edata->lifespan_class = class_id;
 }
 
+static inline uint64_t
+edata_lifespan_timestamp_get(const edata_t *edata) {
+	return edata->lifespan_timestamp_ns;
+}
+
+static inline void
+edata_lifespan_timestamp_set(edata_t *edata, uint64_t ts_ns) {
+	edata->lifespan_timestamp_ns = ts_ns;
+}
+
 static inline bool
 edata_state_in_transition(extent_state_t state) {
 	return state >= extent_state_transition;
@@ -634,6 +645,7 @@ edata_init(edata_t *edata, unsigned arena_ind, void *addr, size_t size,
 		edata_prof_tctx_set(edata, NULL);
 	}
 	edata_lifetime_set_default(edata);
+	edata_lifespan_timestamp_set(edata, 0);
 }
 
 static inline void

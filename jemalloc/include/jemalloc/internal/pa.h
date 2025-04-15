@@ -51,6 +51,13 @@ struct pa_shard_stats_s {
 	pac_stats_t pac_stats;
 };
 
+// Expected lifetime deadlines per class, in nanoseconds
+static const uint64_t lifespan_class_deadlines_ns[NUM_LIFESPAN_CLASSES] = {
+    50ULL * 1000 * 1000,    // 50ms for short-lived class (class 0)
+    500ULL * 1000 * 1000,   // 500ms for medium-lived class (class 1)
+    5000ULL * 1000 * 1000   // 5s for long-lived class (class 2)
+};
+
 /*
  * The block allocator for lifespan classes.  This is a simple allocator that
  * allocates blocks of memory for a given lifespan class, and hands out pointers
@@ -59,6 +66,7 @@ struct pa_shard_stats_s {
 typedef struct lifespan_block_allocator_s {
 	edata_t *current_block;
 	size_t offset;
+	nstime_t current_block_ts;
 } lifespan_block_allocator_t;
 
 /*
@@ -135,6 +143,9 @@ struct pa_shard_s {
 	/* Per-lifespan block allocators for fine-grained page placement */
 	lifespan_block_allocator_t lifespan_blocks[NUM_LIFESPAN_CLASSES];
 };
+
+void
+pa_expire_lifespan_blocks(tsdn_t *tsdn, pa_shard_t *shard);
 
 static inline bool
 pa_shard_dont_decay_muzzy(pa_shard_t *shard) {

@@ -3,6 +3,9 @@
 
 #include "jemalloc/internal/assert.h"
 
+#include "jemalloc/internal/pa.h"
+#include "jemalloc/internal/nstime.h"
+
 JEMALLOC_DIAGNOSTIC_DISABLE_SPURIOUS
 
 /******************************************************************************/
@@ -820,6 +823,35 @@ background_thread_boot1(tsdn_t *tsdn, base_t *base) {
 		malloc_mutex_unlock(tsdn, &info->mtx);
 	}
 #endif
-
 	return false;
+}
+
+void *
+lifespan_reclaimer_entry(void *arg) {
+	pa_shard_t *shard = (pa_shard_t *)arg;
+
+	while (true) {
+		// Sleep (e.g., 1s between scans)
+		nstime_t delay;
+		nstime_init(&delay, 1000000000ULL); // 1 second
+		
+		struct timespec req = {
+			.tv_sec = 1,
+			.tv_nsec = 0
+		};
+		nanosleep(&req, NULL);
+
+		// Log scanner execution
+		nstime_t now;
+		nstime_init(&now, 0);
+		nstime_update(&now);
+		printf("[jemalloc] 🔄 Reclaimer running at %lu ns\n", nstime_ns(&now));
+
+		// Get tsdn
+		tsdn_t *tsdn = tsdn_fetch();
+
+		// Scanner for expired lifespan blocks
+		pa_expire_lifespan_blocks(tsdn, shard);
+	}
+	return NULL;
 }

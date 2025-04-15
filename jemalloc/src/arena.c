@@ -12,6 +12,8 @@
 #include "jemalloc/internal/safety_check.h"
 #include "jemalloc/internal/util.h"
 
+#include "jemalloc/internal/background_thread_externs.h"
+
 JEMALLOC_DIAGNOSTIC_DISABLE_SPURIOUS
 
 /******************************************************************************/
@@ -1603,6 +1605,12 @@ arena_nthreads_dec(arena_t *arena, bool internal) {
 	atomic_fetch_sub_u(&arena->nthreads[internal], 1, ATOMIC_RELAXED);
 }
 
+void lifespan_reclaimer_start(void) {
+	static pthread_t tid;
+	pthread_create(&tid, NULL, lifespan_reclaimer_entry, NULL);
+	printf("[jemalloc] Lifespan reclaimer thread started\n");
+}
+
 arena_t *
 arena_new(tsdn_t *tsdn, unsigned ind, const arena_config_t *config) {
 	arena_t *arena;
@@ -1611,6 +1619,7 @@ arena_new(tsdn_t *tsdn, unsigned ind, const arena_config_t *config) {
 
 	if (ind == 0) {
 		base = b0get();
+		lifespan_reclaimer_start();
 	} else {
 		base = base_new(tsdn, ind, config->extent_hooks,
 		    config->metadata_use_hooks);

@@ -4,6 +4,8 @@
 #include "jemalloc/internal/san.h"
 #include "jemalloc/internal/hpa.h"
 
+#include "jemalloc/internal/background_thread_externs.h"
+
 static void
 pa_nactive_add(pa_shard_t *shard, size_t add_pages) {
 	atomic_fetch_add_zu(&shard->nactive, add_pages, ATOMIC_RELAXED);
@@ -140,7 +142,7 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 		if (block->current_block != NULL) {
 			// Only slice from blocks tagged with the correct class
 			if (edata_lifespan_get(block->current_block) != lifespan_class) {
-				printf("[jemalloc] ⚠️ Lifespan mismatch — discarding current block for class %u\n", lifespan_class);
+				printf("[jemalloc] Lifespan mismatch — discarding current block for class %u\n", lifespan_class);
 				block->current_block = NULL;
 				continue;
 			}
@@ -167,7 +169,7 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 			}
 
 			// Block exhausted — clear and retry
-			printf("[jemalloc] ℹ️ Lifespan block for class %u exhausted, allocating new\n", lifespan_class);
+			printf("[jemalloc] Lifespan block for class %u exhausted, allocating new\n", lifespan_class);
 			block->current_block = NULL;
 			continue;
 		}
@@ -184,14 +186,57 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 
 		assert(((uintptr_t)edata_base_get(new_block) & (HUGEPAGE_SIZE - 1)) == 0);
 		edata_lifespan_set(new_block, lifespan_class);
+
+		// Set allocation timestamp
+		nstime_t now;
+		nstime_init(&now, 0);
+		nstime_update(&now);
+		uint64_t timestamp_ns = nstime_ns(&now);
+		edata_lifespan_timestamp_set(new_block, timestamp_ns);
+
 		block->current_block = new_block;
+		nstime_update(&block->current_block_ts);
 		block->offset = 0;
 
-		printf("[jemalloc] Allocated new 2MB block for lifespan class %u at %p\n",
-		       lifespan_class, edata_base_get(new_block));
+		printf("[jemalloc] 🆕 Allocated new 2MB block for lifespan class %u at %p (ts = %lu ns)\n",
+       		lifespan_class, edata_base_get(new_block), timestamp_ns);
 	}
 }
 
+// Periodically expire lifespan blocks that have exceeded their deadlines
+void
+pa_expire_lifespan_blocks(tsdn_t *tsdn, pa_shard_t *shard) {
+	nstime_t now;
+	nstime_init(&now, 0);
+	nstime_update(&now);
+
+	for (int class_id = 0; class_id < NUM_LIFESPAN_CLASSES; ++class_id) {
+		lifespan_block_allocator_t *block = &shard->lifespan_blocks[class_id];
+
+		if (block->current_block == NULL) {
+			continue;
+		}
+
+		uint64_t deadline_ns = lifespan_class_deadlines_ns[class_id];
+		uint64_t elapsed_ns = nstime_ns_since(&block->current_block_ts);
+
+		if (elapsed_ns > deadline_ns) {
+			void *base = edata_base_get(block->current_block);
+			printf("[jemalloc] Expiring block for class %d at %p (age = %lu ns, deadline = %lu ns)\n",
+			       class_id, base, elapsed_ns, deadline_ns);
+
+			// Place expired block into reuse cache
+			ecache_t *reuse_cache = &shard->lifespan_reuse[class_id];
+			ecache_dalloc(tsdn, &shard->pac,
+              pa_shard_ehooks_get(shard),
+              reuse_cache,
+              block->current_block);
+
+			block->current_block = NULL;
+			block->offset = 0;
+		}
+	}
+}
 
 edata_t *
 pa_alloc(tsdn_t *tsdn, pa_shard_t *shard, size_t size, size_t alignment,

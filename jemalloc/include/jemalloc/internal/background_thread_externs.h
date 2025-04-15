@@ -30,4 +30,6 @@ extern int pthread_create_wrapper(pthread_t *__restrict, const pthread_attr_t *,
 bool background_thread_boot0(void);
 bool background_thread_boot1(tsdn_t *tsdn, base_t *base);
 
+void *lifespan_reclaimer_entry(void *arg);
+
 #endif /* JEMALLOC_INTERNAL_BACKGROUND_THREAD_EXTERNS_H */
