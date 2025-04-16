@@ -5,6 +5,9 @@
 #include "jemalloc/internal/hpa.h"
 
 #include "jemalloc/internal/background_thread_externs.h"
+#include "jemalloc/internal/emap.h"
+#include "jemalloc/internal/rtree.h"
+
 
 static void
 pa_nactive_add(pa_shard_t *shard, size_t add_pages) {
@@ -71,6 +74,8 @@ pa_shard_init(tsdn_t *tsdn, pa_shard_t *shard, pa_central_t *central,
 					ind,    // arena index
 					false); // delay_coalesce 
 	}
+
+	memset(shard->lifespan_blocks, 0, sizeof(shard->lifespan_blocks));
 
 	return false;
 }
@@ -140,7 +145,6 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 
 	while (true) {
 		if (block->current_block != NULL) {
-			// Only slice from blocks tagged with the correct class
 			if (edata_lifespan_get(block->current_block) != lifespan_class) {
 				printf("[jemalloc] Lifespan mismatch — discarding current block for class %u\n", lifespan_class);
 				block->current_block = NULL;
@@ -149,6 +153,13 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 
 			size_t base = (size_t)edata_base_get(block->current_block);
 			size_t aligned_offset = ALIGNMENT_CEILING(block->offset, alignment);
+
+			// Avoid slicing at offset 0 (base address) to prevent emap collisions
+			if (aligned_offset == 0) {
+				block->offset = aligned_offset + size;
+				printf("[jemalloc] ⚠️  Skipping slice at base addr %p to avoid emap collision\n", (void *)base);
+				continue;
+			}
 
 			if (aligned_offset + size <= edata_size_get(block->current_block)) {
 				void *slice_addr = (void *)(base + aligned_offset);
@@ -163,7 +174,12 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 				           shard->ind);
 
 				edata_lifespan_set(slice, lifespan_class);
+
+				// ✅ Register only the slices, not the full block (which was mapped at allocation)
+				emap_register_boundary(tsdn, shard->emap, slice, /* slab */ false, SC_NSIZES);
+
 				block->offset = aligned_offset + size;
+				block->live_slices++;
 
 				return slice;
 			}
@@ -174,12 +190,13 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 			continue;
 		}
 
-		// Allocate a fresh 2MB block
+		// 🆕 Allocate a fresh 2MB block (automatically mapped via emap_register_boundary)
 		edata_t *new_block = pai_alloc(tsdn, &shard->pac.pai,
 		                               HUGEPAGE_SIZE, HUGEPAGE_SIZE,
 		                               zero, /* guarded */ false,
 		                               /* slab */ false,
 		                               /* deferred_work */ NULL);
+
 		if (new_block == NULL) {
 			return NULL;
 		}
@@ -187,61 +204,110 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 		assert(((uintptr_t)edata_base_get(new_block) & (HUGEPAGE_SIZE - 1)) == 0);
 		edata_lifespan_set(new_block, lifespan_class);
 
-		// Set allocation timestamp
-		nstime_t now;
-		nstime_init(&now, 0);
-		nstime_update(&now);
-		uint64_t timestamp_ns = nstime_ns(&now);
+		struct timespec ts;
+		clock_gettime(CLOCK_MONOTONIC, &ts);
+		uint64_t timestamp_ns = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 		edata_lifespan_timestamp_set(new_block, timestamp_ns);
 
 		block->current_block = new_block;
-		nstime_update(&block->current_block_ts);
+		nstime_init(&block->current_block_ts, timestamp_ns);
 		block->offset = 0;
 
 		printf("[jemalloc] 🆕 Allocated new 2MB block for lifespan class %u at %p (ts = %lu ns)\n",
-       		lifespan_class, edata_base_get(new_block), timestamp_ns);
+		       lifespan_class, edata_base_get(new_block), timestamp_ns);
 	}
 }
 
+
 // Periodically expire lifespan blocks that have exceeded their deadlines
-void
-pa_expire_lifespan_blocks(tsdn_t *tsdn, pa_shard_t *shard) {
-	nstime_t now;
-	nstime_init(&now, 0);
-	nstime_update(&now);
+void pa_expire_lifespan_blocks(tsdn_t *tsdn, pa_shard_t *shard) {
+    if (shard == NULL) {
+        printf("[jemalloc] [reclaimer] Skipping: shard is NULL\n");
+        return;
+    }
 
-	for (int class_id = 0; class_id < NUM_LIFESPAN_CLASSES; ++class_id) {
-		lifespan_block_allocator_t *block = &shard->lifespan_blocks[class_id];
+    struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	uint64_t now_ns = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 
-		if (block->current_block == NULL) {
+	printf("\n================================\n");
+    printf("[jemalloc] 🔄 Reclaimer running at %lu ns\n", now_ns);
+
+    for (int class_id = 0; class_id < NUM_LIFESPAN_CLASSES; ++class_id) {
+		// printf("[jemalloc] Expiring lifespan blocks for class %d\n", class_id);
+		
+        lifespan_block_allocator_t *block = &shard->lifespan_blocks[class_id];
+
+        if (block == NULL) {
+            printf("[jemalloc] ❗ Block for class %d is NULL\n", class_id);
+            continue;
+        }
+
+		edata_t *edata = block->current_block;
+		if (edata == NULL) {
+			printf("[jemalloc] ❌ Block[%d] has NULL current_block\n", class_id);
 			continue;
 		}
 
-		uint64_t deadline_ns = lifespan_class_deadlines_ns[class_id];
-		uint64_t elapsed_ns = nstime_ns_since(&block->current_block_ts);
+		void *addr = edata_addr_get(edata);
+		void *base = edata_base_get(edata);
 
-		if (elapsed_ns > deadline_ns) {
-			void *base = edata_base_get(block->current_block);
-			printf("[jemalloc] Expiring block for class %d at %p (age = %lu ns, deadline = %lu ns)\n",
-			       class_id, base, elapsed_ns, deadline_ns);
+		// printf("[jemalloc] 🔍 class %d edata ptr = %p | addr = %p | base = %p\n",
+		// 	class_id, (void *)edata, addr, base);
 
-			// Place expired block into reuse cache
-			ecache_t *reuse_cache = &shard->lifespan_reuse[class_id];
-			ecache_dalloc(tsdn, &shard->pac,
-              pa_shard_ehooks_get(shard),
-              reuse_cache,
-              block->current_block);
-
+		// Defensive: check if addr looks valid
+		if ((uintptr_t)addr < 0x1000 || addr == (void *)0xDEADBEEF) {
+			printf("[jemalloc] ❌ Invalid edata->addr in class %d: %p\n", class_id, addr);
 			block->current_block = NULL;
-			block->offset = 0;
+			continue;
 		}
-	}
+
+        uint64_t deadline_ns = lifespan_class_deadlines_ns[class_id];
+        uint64_t elapsed_ns = now_ns - nstime_ns(&block->current_block_ts);
+
+        printf("[jemalloc] ⏳ class %d block age = %lu ns (deadline = %lu ns)\n",
+               class_id, elapsed_ns, deadline_ns);
+
+        if (elapsed_ns > deadline_ns) {
+            printf("[jemalloc] 🔥 Expiring block for class %d at base = %p (age = %lu ns)\n",
+                   class_id, base, elapsed_ns);
+
+            // Extra check: Make sure class matches
+            if (edata_lifespan_get(edata) != class_id) {
+                printf("[jemalloc] ❗ Lifespan class mismatch for edata in class %d\n", class_id);
+                block->current_block = NULL;
+                continue;
+            }
+
+            ecache_t *reuse_cache = &shard->lifespan_reuse[class_id];
+
+			if (block->live_slices == 0) {
+				// printf("[jemalloc] No live slices for class %d, expiring block. Safe to proceed\n", class_id);
+
+				assert(edata_state_get(edata) == extent_state_active);
+
+				// Only expire if no live allocations from this block remain
+				ecache_dalloc(tsdn, &shard->pac,
+							  pa_shard_ehooks_get(shard),
+							  reuse_cache,
+							  edata);
+				block->current_block = NULL;
+				block->offset = 0;
+				printf("[jemalloc] ✅ Reclaimed expired block for class %d\n", class_id);
+			} else {
+				// Can't reclaim yet — still active slices
+				printf("[jemalloc] 🚫 Skipping expiration: %d live slices remain for class %d\n",
+					   block->live_slices, class_id);
+			}
+        }
+    }
+	printf("================================\n\n");
 }
 
 edata_t *
 pa_alloc(tsdn_t *tsdn, pa_shard_t *shard, size_t size, size_t alignment,
     bool slab, szind_t szind, bool zero, bool guarded,
-    uint8_t lifespan_class,
+uint8_t lifespan_class,
     bool *deferred_work_generated) {
 	witness_assert_depth_to_rank(tsdn_witness_tsdp_get(tsdn),
 	    WITNESS_RANK_CORE, 0);

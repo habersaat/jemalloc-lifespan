@@ -86,6 +86,7 @@ ecache_alloc(tsdn_t *tsdn, pac_t *pac, ehooks_t *ehooks, ecache_t *ecache,
 	bool commit = true;
 	edata_t *edata = extent_recycle(tsdn, pac, ehooks, ecache, expand_edata,
 	    size, alignment, zero, &commit, false, guarded);
+
 	assert(edata == NULL || edata_pai_get(edata) == EXTENT_PAI_PAC);
 	assert(edata == NULL || edata_guarded_get(edata) == guarded);
 	return edata;
@@ -132,6 +133,11 @@ ecache_alloc_grow(tsdn_t *tsdn, pac_t *pac, ehooks_t *ehooks, ecache_t *ecache,
 	return edata;
 }
 
+bool
+is_lifespan_slice(edata_t *edata) {
+    return edata_lifespan_get(edata) != 255;
+}
+
 void
 ecache_dalloc(tsdn_t *tsdn, pac_t *pac, ehooks_t *ehooks, ecache_t *ecache,
     edata_t *edata) {
@@ -141,8 +147,23 @@ ecache_dalloc(tsdn_t *tsdn, pac_t *pac, ehooks_t *ehooks, ecache_t *ecache,
 	witness_assert_depth_to_rank(tsdn_witness_tsdp_get(tsdn),
 	    WITNESS_RANK_CORE, 0);
 
+	void *addr = edata_addr_get(edata);
+	// printf("[jemalloc] 🧹 ecache_dalloc called on edata = %p (addr = %p, size = %zu)\n",
+	// 		(void *)edata, addr, edata_size_get(edata));
+
 	edata_addr_set(edata, edata_base_get(edata));
 	edata_zeroed_set(edata, false);
+
+	if (is_lifespan_slice(edata)) {
+		assert(edata_state_get(edata) == extent_state_active);
+		unsigned arena_ind = edata_arena_ind_get(edata);
+		arena_t *arena = arena_get(tsdn, arena_ind, false);
+		pa_shard_t *shard = &arena->pa_shard;
+	
+		uint8_t lifespan_class = edata_lifespan_get(edata);
+		lifespan_block_allocator_t *block = &shard->lifespan_blocks[lifespan_class];
+		block->live_slices--;
+	}
 
 	extent_record(tsdn, pac, ehooks, ecache, edata);
 }

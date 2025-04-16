@@ -166,13 +166,26 @@ emap_register_boundary(tsdn_t *tsdn, emap_t *emap, edata_t *edata,
 	if (err) {
 		return true;
 	}
-	assert(rtree_leaf_elm_read(tsdn, &emap->rtree, elm_a,
-	    /* dependent */ false).edata == NULL);
-	assert(rtree_leaf_elm_read(tsdn, &emap->rtree, elm_b,
-	    /* dependent */ false).edata == NULL);
+
+	void *addr = edata_addr_get(edata);
+	uintptr_t key = (uintptr_t)addr;
+
+	rtree_contents_t contents_a = rtree_leaf_elm_read(tsdn, &emap->rtree, elm_a, false);
+	rtree_contents_t contents_b = rtree_leaf_elm_read(tsdn, &emap->rtree, elm_b, false);
+
+	// printf("[emap] 📌 Registering edata = %p (addr = %p, size = %zu)\n", 
+	//        (void *)edata, addr, edata_size_get(edata));
+	// printf("[emap] 🔍 elm_a: edata = %p\n", (void *)contents_a.edata);
+	// printf("[emap] 🔍 elm_b: edata = %p\n", (void *)contents_b.edata);
+	// fflush(stdout);
+
+	assert(contents_a.edata == NULL);
+	assert(contents_b.edata == NULL);
+
 	emap_rtree_write_acquired(tsdn, emap, elm_a, elm_b, edata, szind, slab);
 	return false;
 }
+
 
 /* Invoked *after* emap_register_boundary. */
 void
@@ -367,10 +380,30 @@ emap_do_assert_mapped(tsdn_t *tsdn, emap_t *emap, edata_t *edata) {
 
 	rtree_contents_t contents = rtree_read(tsdn, &emap->rtree, rtree_ctx,
 	    (uintptr_t)edata_base_get(edata));
+
+	if (contents.edata != edata) {
+		printf("[emap] ❌ Mismatch in edata mapping!\n");
+		printf("        rtree.edata         = %p\n", (void *)contents.edata);
+		printf("        provided edata      = %p\n", (void *)edata);
+		printf("        edata->addr         = %p\n", edata_addr_get(edata));
+		printf("        contents->addr      = %p\n", contents.edata ? edata_addr_get(contents.edata) : NULL);
+	}
+
+	if (contents.metadata.is_head != edata_is_head_get(edata)) {
+		printf("[emap] ❌ Mismatch in is_head: rtree = %d, edata = %d\n",
+		       contents.metadata.is_head, edata_is_head_get(edata));
+	}
+
+	if (contents.metadata.state != edata_state_get(edata)) {
+		printf("[emap] ❌ Mismatch in state: rtree = %d, edata = %d\n",
+		       contents.metadata.state, edata_state_get(edata));
+	}
+
 	assert(contents.edata == edata);
 	assert(contents.metadata.is_head == edata_is_head_get(edata));
 	assert(contents.metadata.state == edata_state_get(edata));
 }
+
 
 void
 emap_do_assert_not_mapped(tsdn_t *tsdn, emap_t *emap, edata_t *edata) {

@@ -1605,10 +1605,17 @@ arena_nthreads_dec(arena_t *arena, bool internal) {
 	atomic_fetch_sub_u(&arena->nthreads[internal], 1, ATOMIC_RELAXED);
 }
 
-void lifespan_reclaimer_start(void) {
-	static pthread_t tid;
-	pthread_create(&tid, NULL, lifespan_reclaimer_entry, NULL);
-	printf("[jemalloc] Lifespan reclaimer thread started\n");
+void lifespan_reclaimer_start(pa_shard_t *shard) {
+    printf("[jemalloc] 🌱 lifespan_reclaimer_start() for shard = %p\n", (void *)shard);
+
+    // One thread per shard (one per arena)
+    pthread_t tid;
+    int ret = pthread_create(&tid, NULL, lifespan_reclaimer_entry, (void *)shard);
+    if (ret != 0) {
+        printf("[jemalloc] ❌ Failed to create reclaimer thread (errno = %d)\n", ret);
+    } else {
+        printf("[jemalloc] ✅ Lifespan reclaimer thread started for shard = %p\n", (void *)shard);
+    }
 }
 
 arena_t *
@@ -1619,7 +1626,6 @@ arena_new(tsdn_t *tsdn, unsigned ind, const arena_config_t *config) {
 
 	if (ind == 0) {
 		base = b0get();
-		lifespan_reclaimer_start();
 	} else {
 		base = base_new(tsdn, ind, config->extent_hooks,
 		    config->metadata_use_hooks);
@@ -1669,6 +1675,9 @@ arena_new(tsdn_t *tsdn, unsigned ind, const arena_config_t *config) {
 	    arena_muzzy_decay_ms_default_get())) {
 		goto label_error;
 	}
+
+	// Initialize the lifespan reclaimer thread per arena
+	lifespan_reclaimer_start(&arena->pa_shard);
 
 	/* Initialize bins. */
 	atomic_store_u(&arena->binshard_next, 0, ATOMIC_RELEASE);

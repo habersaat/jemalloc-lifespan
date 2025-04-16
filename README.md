@@ -18,3 +18,9 @@ gcc test.c -o test \
   -I jemalloc/include \
   jemalloc/lib/libjemalloc.a
 ```
+
+```bash
+gcc test_reclaimer.c -o test_reclaimer \
+  -I jemalloc/include \
+  jemalloc/lib/libjemalloc.a
+```

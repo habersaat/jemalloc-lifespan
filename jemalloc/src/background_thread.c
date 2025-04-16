@@ -826,32 +826,21 @@ background_thread_boot1(tsdn_t *tsdn, base_t *base) {
 	return false;
 }
 
-void *
-lifespan_reclaimer_entry(void *arg) {
-	pa_shard_t *shard = (pa_shard_t *)arg;
+void *lifespan_reclaimer_entry(void *arg) {
+    pa_shard_t *shard = (pa_shard_t *)arg;
 
-	while (true) {
-		// Sleep (e.g., 1s between scans)
-		nstime_t delay;
-		nstime_init(&delay, 1000000000ULL); // 1 second
-		
-		struct timespec req = {
-			.tv_sec = 1,
-			.tv_nsec = 0
-		};
-		nanosleep(&req, NULL);
+    if (shard == NULL) {
+        printf("[jemalloc] ❗ lifespan_reclaimer_entry got NULL shard\n");
+        return NULL;
+    }
 
-		// Log scanner execution
-		nstime_t now;
-		nstime_init(&now, 0);
-		nstime_update(&now);
-		printf("[jemalloc] 🔄 Reclaimer running at %lu ns\n", nstime_ns(&now));
+    while (true) {
+        struct timespec req = { .tv_sec = 1, .tv_nsec = 0 };
+        nanosleep(&req, NULL);
 
-		// Get tsdn
-		tsdn_t *tsdn = tsdn_fetch();
+        tsdn_t *tsdn = tsdn_fetch();
+        pa_expire_lifespan_blocks(tsdn, shard);
+    }
 
-		// Scanner for expired lifespan blocks
-		pa_expire_lifespan_blocks(tsdn, shard);
-	}
-	return NULL;
+    return NULL;
 }

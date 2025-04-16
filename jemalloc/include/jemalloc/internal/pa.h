@@ -53,9 +53,9 @@ struct pa_shard_stats_s {
 
 // Expected lifetime deadlines per class, in nanoseconds
 static const uint64_t lifespan_class_deadlines_ns[NUM_LIFESPAN_CLASSES] = {
-    50ULL * 1000 * 1000,    // 50ms for short-lived class (class 0)
-    500ULL * 1000 * 1000,   // 500ms for medium-lived class (class 1)
-    5000ULL * 1000 * 1000   // 5s for long-lived class (class 2)
+    10ULL * 1000 * 1000,    // 10ms for short-lived class (class 0)
+    100ULL * 1000 * 1000,   // 100ms for medium-lived class (class 1)
+    1000ULL * 1000 * 1000   // 1s for long-lived class (class 2)
 };
 
 /*
@@ -67,6 +67,7 @@ typedef struct lifespan_block_allocator_s {
 	edata_t *current_block;
 	size_t offset;
 	nstime_t current_block_ts;
+	int live_slices;
 } lifespan_block_allocator_t;
 
 /*

@@ -2,6 +2,11 @@
     "files.associations": {
         "background_thread_externs.h": "c",
         "safety_check.h": "c",
-        "nstime.h": "c"
+        "nstime.h": "c",
+        "jemalloc.h": "c",
+        "__locale": "c",
+        "san.h": "c",
+        "jemalloc_preamble.h": "c",
+        "slab_data.h": "c"
     }
 }
