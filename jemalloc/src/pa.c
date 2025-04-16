@@ -157,7 +157,7 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 			// Avoid slicing at offset 0 (base address) to prevent emap collisions
 			if (aligned_offset == 0) {
 				block->offset = aligned_offset + size;
-				printf("[jemalloc] ⚠️  Skipping slice at base addr %p to avoid emap collision\n", (void *)base);
+				// printf("[jemalloc] ⚠️  Skipping slice at base addr %p to avoid emap collision\n", (void *)base);
 				continue;
 			}
 
@@ -175,11 +175,20 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 
 				edata_lifespan_set(slice, lifespan_class);
 
-				// ✅ Register only the slices, not the full block (which was mapped at allocation)
+    			// Set individual allocation timestamp for slice
+				struct timespec ts;
+				clock_gettime(CLOCK_MONOTONIC, &ts);
+				uint64_t slice_ts = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+				edata_lifespan_timestamp_set(slice, slice_ts);
+
+				// Register only the slices, not the full block (which was mapped at allocation)
 				emap_register_boundary(tsdn, shard->emap, slice, /* slab */ false, SC_NSIZES);
 
 				block->offset = aligned_offset + size;
 				block->live_slices++;
+				
+				// Mark as slice to avoid confusion with full blocks during expiration
+				edata_mark_as_slice(slice);
 
 				return slice;
 			}

@@ -154,7 +154,7 @@ ecache_dalloc(tsdn_t *tsdn, pac_t *pac, ehooks_t *ehooks, ecache_t *ecache,
 	edata_addr_set(edata, edata_base_get(edata));
 	edata_zeroed_set(edata, false);
 
-	if (is_lifespan_slice(edata)) {
+	if (is_lifespan_slice(edata) && edata_is_marked_as_slice(edata)) {
 		assert(edata_state_get(edata) == extent_state_active);
 		unsigned arena_ind = edata_arena_ind_get(edata);
 		arena_t *arena = arena_get(tsdn, arena_ind, false);
@@ -163,6 +163,25 @@ ecache_dalloc(tsdn_t *tsdn, pac_t *pac, ehooks_t *ehooks, ecache_t *ecache,
 		uint8_t lifespan_class = edata_lifespan_get(edata);
 		lifespan_block_allocator_t *block = &shard->lifespan_blocks[lifespan_class];
 		block->live_slices--;
+
+		// Calculate actual lifetime of this slice
+		uint64_t alloc_ts = edata_lifespan_timestamp_get(edata);
+		struct timespec now;
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		uint64_t now_ns = (uint64_t)now.tv_sec * 1000000000ULL + now.tv_nsec;
+		uint64_t age_ns = now_ns - alloc_ts;
+
+		// Update stats and check for misclassification
+		lifespan_class_stats_t *stats = &shard->lifespan_stats[lifespan_class];
+		stats->num_allocs++;
+		stats->total_lifetime_ns += age_ns;
+
+		uint64_t deadline_ns = lifespan_class_deadlines_ns[lifespan_class];
+		if (age_ns > deadline_ns) {
+			stats->num_misclassifications++;
+			printf("[jemalloc] ⚠️ Detected lifespan misclassification at free: class %u, age = %lu ns (deadline = %lu ns)\n",
+			       lifespan_class, age_ns, deadline_ns);
+		}
 	}
 
 	extent_record(tsdn, pac, ehooks, ecache, edata);

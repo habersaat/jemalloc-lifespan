@@ -7,6 +7,10 @@
         "__locale": "c",
         "san.h": "c",
         "jemalloc_preamble.h": "c",
-        "slab_data.h": "c"
+        "slab_data.h": "c",
+        "array": "c",
+        "string": "c",
+        "string_view": "c",
+        "vector": "c"
     }
 }

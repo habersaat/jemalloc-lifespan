@@ -143,6 +143,7 @@ struct edata_s {
 	uint64_t		e_bits;
 	uint8_t lifespan_class;
 	uint64_t lifespan_timestamp_ns;
+	bool is_slice;
 #define MASK(CURRENT_FIELD_WIDTH, CURRENT_FIELD_SHIFT) ((((((uint64_t)0x1U) << (CURRENT_FIELD_WIDTH)) - 1)) << (CURRENT_FIELD_SHIFT))
 
 #define EDATA_BITS_ARENA_WIDTH  MALLOCX_ARENA_BITS
@@ -614,6 +615,14 @@ edata_lifespan_timestamp_set(edata_t *edata, uint64_t ts_ns) {
 static inline bool
 edata_state_in_transition(extent_state_t state) {
 	return state >= extent_state_transition;
+}
+
+static inline void edata_mark_as_slice(edata_t *edata) {
+    edata->is_slice = true;
+}
+
+static inline bool edata_is_marked_as_slice(edata_t *edata) {
+    return edata->is_slice;
 }
 
 /*

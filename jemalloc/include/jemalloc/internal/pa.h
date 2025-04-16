@@ -27,6 +27,12 @@ struct pa_central_s {
 	hpa_central_t hpa;
 };
 
+typedef struct {
+	uint64_t num_allocs;
+	uint64_t total_lifetime_ns;
+	uint64_t num_misclassifications;
+} lifespan_class_stats_t;
+
 /*
  * The stats for a particular pa_shard.  Because of the way the ctl module
  * handles stats epoch data collection (it has its own arena_stats, and merges
@@ -143,6 +149,8 @@ struct pa_shard_s {
 
 	/* Per-lifespan block allocators for fine-grained page placement */
 	lifespan_block_allocator_t lifespan_blocks[NUM_LIFESPAN_CLASSES];
+
+	lifespan_class_stats_t lifespan_stats[NUM_LIFESPAN_CLASSES];
 };
 
 void
