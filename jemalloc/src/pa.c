@@ -318,6 +318,15 @@ void pa_expire_lifespan_blocks(tsdn_t *tsdn, pa_shard_t *shard) {
                 // ✅ Reclaim block
                 printf("[jemalloc] 🔥 Reclaiming expired block for class %d (block %zd)\n", class_id, i);
 
+				// Invalidate slice list before freeing block
+				for (size_t j = 0; j < MAX_SLICES_PER_BLOCK; ++j) {
+					edata_t *slice = block->slices[j];
+					if (slice != NULL && edata_is_marked_as_slice(slice)) {
+						edata_slice_owner_set(slice, NULL);
+						block->slices[j] = NULL;
+					}
+				}
+
 				// Deregister from emap
 				emap_deregister_boundary(tsdn, shard->emap, edata);
 

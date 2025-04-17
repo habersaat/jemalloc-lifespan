@@ -1,14 +1,17 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
 import ctypes
+import time
+import random
+import sys
 
 # ============================
 # 🔧 jemalloc stat utilities
 # ============================
 
-# Load jemalloc shared library
-jemalloc = ctypes.CDLL("libjemalloc.so", use_errno=True)
+try:
+    jemalloc = ctypes.CDLL("./jemalloc/lib/libjemalloc.so", use_errno=True)
+except OSError as e:
+    print(f"[ERROR] Failed to load jemalloc: {e}")
+    sys.exit(1)
 
 def get_stat(stat_name):
     value = ctypes.c_size_t()
@@ -21,48 +24,37 @@ def get_stat(stat_name):
 def print_all_stats(label):
     print(f"\n🧠 jemalloc stats at: {label}")
     for stat in ["stats.allocated", "stats.active", "stats.resident"]:
-        print(f"  {stat:<18} = {get_stat(stat):>10} bytes")
+        try:
+            val = get_stat(stat)
+            print(f"  {stat:<18} = {val:>10} bytes")
+        except Exception as e:
+            print(f"  {stat:<18} = [error: {e}]")
 
 # ============================
-# 📦 Define simple CNN
+# 🚀 Allocation benchmark
 # ============================
 
-class CustomCNN(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=5, stride=1, padding=2)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=5, stride=1, padding=2)
-        self.fc1 = nn.Linear(32 * 64 * 64, 1024)
-        self.fc2 = nn.Linear(1024, 10)
+NUM_ALLOC = 1000
+MIN_ALLOC = 64 * 1024
+MAX_ALLOC = 256 * 1024
+MAX_LIFETIME_MS = 2000
 
-    def forward(self, x):
-        x = torch.relu(self.conv1(x))  # (32, 16, 64, 64)
-        x = torch.relu(self.conv2(x))  # (32, 32, 64, 64)
-        x = x.view(x.size(0), -1)      # flatten
-        x = torch.relu(self.fc1(x))
-        return self.fc2(x)
+print_all_stats("Start")
 
-# ============================
-# 🧪 Setup training
-# ============================
+allocs = []
 
-model = CustomCNN()
-dummy_input = torch.randn(32, 3, 64, 64)  # ~1.5MB per batch
+print(f"\n🚀 Starting {NUM_ALLOC} randomized allocations")
+for i in range(NUM_ALLOC):
+    size = random.randint(MIN_ALLOC, MAX_ALLOC)
+    lifetime_ms = random.choice([10, 50, 100, 250, 500, 1000, 2000])
+    ptr = ctypes.cast(jemalloc.je_malloc(size), ctypes.c_void_p)
+    if not ptr:
+        print(f"[{i}] ❌ Allocation failed")
+        continue
+    allocs.append((ptr, size))
+    print(f"[{i}] ✅ Allocated {size} bytes for {lifetime_ms}ms at {hex(ptr.value)}")
+    time.sleep(lifetime_ms / 1000.0)
+    jemalloc.je_free(ptr)
+    print(f"[{i}] 🧹 Freed {hex(ptr.value)}")
 
-optimizer = optim.SGD(model.parameters(), lr=0.01)
-criterion = nn.CrossEntropyLoss()
-
-# ============================
-# 🚀 Benchmark
-# ============================
-
-print_all_stats("Before training")
-
-for step in range(500):
-    optimizer.zero_grad()
-    output = model(dummy_input)
-    loss = criterion(output, torch.randint(0, 10, (32,)))
-    loss.backward()
-    optimizer.step()
-
-print_all_stats("After training")
+print_all_stats("End")
