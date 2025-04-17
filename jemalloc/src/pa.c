@@ -12,6 +12,8 @@
 #include <unistd.h>     // for getpid()
 #include <stdint.h>     // for uint64_t
 
+bool lifetime_ml_enabled = false;
+
 
 static uint64_t hash_stack_trace(void **buffer, int depth) {
     uint64_t hash = 5381;
@@ -201,7 +203,7 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 
 			assert(edata_state_get(slice) == extent_state_active);
 
-			emap_register_boundary(tsdn, shard->emap, slice, false, SC_NSIZES);
+			// emap_register_boundary(tsdn, shard->emap, slice, false, SC_NSIZES);
 
 			block->offset = aligned_offset + size;
 			block->live_slices++;

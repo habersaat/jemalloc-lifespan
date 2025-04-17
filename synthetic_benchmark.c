@@ -1,96 +1,118 @@
+/* mlsim_benchmark_v2.c –– extended ML‑like lifetime generator */
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <unistd.h>
 #include <time.h>
 #include <string.h>
+#include <pthread.h>
 #include <jemalloc/jemalloc.h>
 
-#define ALLOC_COUNT 1000
-#define MIN_ALLOC 65536
-#define MAX_ALLOC 262144
+/* ---------- tunables ---------- */
+#define EPOCHS         20     /* how many forward / backward cycles */
+#define SHORT_PER_EP   800    /* per‑epoch short‑lived bufs   (64–128 KB) */
+#define MID_PER_EP     400    /* per‑epoch mid‑lived bufs     (128–192 KB) */
+#define LONG_PER_EP    120    /* per‑epoch long‑lived bufs    (192–256 KB) */
 
-typedef struct {
-    void *ptr;
-    size_t size;
-    int delay_ms;
-    int freed;
-} alloc_record;
+#define BURST_THREADS  4      /* small burst to mix threads   */
+#define BURST_ALLOCS   3000   /* per thread, 64–96 KB each    */
 
-size_t random_size() {
-    return (rand() % (MAX_ALLOC - MIN_ALLOC + 1)) + MIN_ALLOC;
+#define MIN_ALLOC 65536       /* 64 KB  */
+#define MAX_ALLOC 262144      /* 256 KB */
+
+typedef struct { void *ptr; size_t sz; int freed; } rec_t;
+
+/* ---------- helpers ---------- */
+static inline size_t rnd_sz(size_t lo, size_t hi) {
+    return (rand() % (hi - lo + 1)) + lo;
+}
+static inline void msleep(int ms) { usleep(ms * 1000); }
+
+/* ---------- burst thread ---------- */
+void* burst_thread(void *arg) {
+    (void)arg;
+    for (int i = 0; i < BURST_ALLOCS; i++) {
+        size_t sz = rnd_sz(65536, 98304);    /* 64–96 KB */
+        void *p   = je_malloc(sz);
+        if (p) {
+            memset(p, 0xEE, sz);
+            je_free(p);
+        }
+    }
+    return NULL;
 }
 
-int random_delay() {
-    return (rand() % 200);  // 0–200ms
-}
+/* ---------- main ---------- */
+int main(void) {
+    puts("🧠  ML‑like lifetime stress v2 starting …");
+    srand((unsigned)time(NULL));
 
-void stress_sleep(int ms) {
-    usleep(ms * 1000);
-}
+    /* long‑lived parameters survive across epochs */
+    rec_t long_live_pool[LONG_PER_EP * EPOCHS];
+    int   long_pool_len = 0;
 
-int main() {
-    printf("🔬 [stress] Starting extended lifespan stress test...\n");
-    srand(time(NULL));
+    for (int ep = 0; ep < EPOCHS; ep++) {
+        printf("\n🔄 Epoch %d / %d\n", ep + 1, EPOCHS);
 
-    alloc_record allocs[ALLOC_COUNT] = {0};
-
-    // Phase 1: Interleaved allocations + opportunistic frees
-    for (int i = 0; i < ALLOC_COUNT; i++) {
-        allocs[i].size = random_size();
-        allocs[i].delay_ms = random_delay();
-        allocs[i].freed = 0;
-
-        allocs[i].ptr = je_malloc(allocs[i].size);
-        if (!allocs[i].ptr) {
-            fprintf(stderr, "❌ Failed to allocate index %d\n", i);
-            continue;
+        /* ---------- Phase 1 : forward (short) ---------- */
+        rec_t short_bufs[SHORT_PER_EP] = {0};
+        for (int i = 0; i < SHORT_PER_EP; i++) {
+            size_t sz = rnd_sz(65536, 131072);          /* 64–128 KB */
+            void *p   = je_malloc(sz);
+            if (p) { short_bufs[i].ptr = p; short_bufs[i].sz = sz; }
+            /* chance to free an older short early */
+            if (i > 30 && (rand() & 7) == 0) {
+                int j = rand() % i;
+                if (short_bufs[j].ptr && !short_bufs[j].freed) {
+                    je_free(short_bufs[j].ptr);
+                    short_bufs[j].freed = 1;
+                }
+            }
+            msleep(2);
         }
 
-        memset(allocs[i].ptr, 0xAB, allocs[i].size);
-        printf("✅ Alloc[%d] = %p (size = %zu, delay = %dms)\n",
-               i, allocs[i].ptr, allocs[i].size, allocs[i].delay_ms);
+        /* ---------- Phase 2 : mid‑lived tensors ---------- */
+        rec_t mid_bufs[MID_PER_EP] = {0};
+        for (int i = 0; i < MID_PER_EP; i++) {
+            size_t sz = rnd_sz(131072, 196608);         /* 128–192 KB */
+            void *p   = je_malloc(sz);
+            if (p) { mid_bufs[i].ptr = p; mid_bufs[i].sz = sz; }
+            msleep(1);
+        }
 
-        // Occasionally free earlier allocs
-        if (i > 20 && (rand() % 4 == 0)) {
-            int j = rand() % i;
-            if (!allocs[j].freed) {
-                printf("🧹 Freeing alloc[%d] = %p early\n", j, allocs[j].ptr);
-                je_free(allocs[j].ptr);
-                allocs[j].freed = 1;
+        /* ---------- Phase 3 : new long‑lived params ---------- */
+        for (int i = 0; i < LONG_PER_EP; i++) {
+            size_t sz = rnd_sz(196608, 262144);         /* 192–256 KB */
+            void *p   = je_malloc(sz);
+            if (p) {
+                memset(p, 0xCC, sz);
+                long_live_pool[long_pool_len].ptr = p;
+                long_live_pool[long_pool_len].sz  = sz;
+                long_pool_len++;
             }
         }
 
-        stress_sleep(10);  // faster than original
+        /* ---------- Phase 4 : free short + mid ---------- */
+        for (int i = 0; i < SHORT_PER_EP; i++)
+            if (short_bufs[i].ptr && !short_bufs[i].freed) je_free(short_bufs[i].ptr);
+        for (int i = 0; i < MID_PER_EP;   i++)
+            if (mid_bufs[i].ptr) je_free(mid_bufs[i].ptr);
+
+        /* give allocator time to react */
+        msleep(10);
     }
 
-    // Phase 2: Final frees
-    for (int i = 0; i < ALLOC_COUNT; i++) {
-        if (!allocs[i].freed && allocs[i].ptr != NULL) {
-            printf("🧹 Final free of alloc[%d] = %p\n", i, allocs[i].ptr);
-            je_free(allocs[i].ptr);
-            allocs[i].freed = 1;
-            stress_sleep(1);  // minimal delay
-        }
-    }
+    /* ---------- small multi‑threaded reuse burst ---------- */
+    puts("\n⚡  Threaded reuse burst");
+    pthread_t th[BURST_THREADS];
+    for (int t = 0; t < BURST_THREADS; t++) pthread_create(&th[t], NULL, burst_thread, NULL);
+    for (int t = 0; t < BURST_THREADS; t++) pthread_join(th[t], NULL);
 
-    // Phase 3: Wait to observe reclamation + reuse
-    printf("⏳ Sleeping 5s to observe promotions & reclamation...\n");
-    sleep(5);
+    /* ---------- final cleanup ---------- */
+    puts("\n📤  Freeing long‑lived params");
+    for (int i = 0; i < long_pool_len; i++)
+        if (long_live_pool[i].ptr) je_free(long_live_pool[i].ptr);
 
-    // Phase 4: Reuse-phase
-    printf("♻️ [reuse] Allocating again to test reuse cache...\n");
-    for (int i = 0; i < 100; i++) {
-        size_t size = random_size();
-        void *ptr = je_malloc(size);
-        if (ptr) {
-            memset(ptr, 0xCD, size);
-            printf("🔁 Alloc[%d] = %p (size = %zu)\n", i, ptr, size);
-            je_free(ptr);
-        }
-        stress_sleep(5);
-    }
-
-    printf("✅ [stress] Extended lifespan stress test complete.\n");
+    puts("\n✅  Benchmark complete – happy training!");
     return 0;
 }

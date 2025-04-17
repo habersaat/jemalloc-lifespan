@@ -55,3 +55,14 @@ gcc test_lifespan_stress.c -o test_lifespan_stress \
   -I jemalloc/include \
   jemalloc/lib/libjemalloc.a
 ```
+
+
+
+ML:
+
+```bash
+gcc synthetic_benchmark.c -o synthetic_benchmark   -I jemalloc/include   jemalloc/lib/libjemalloc.a
+./synthetic_benchmark
+python3 train_lifetime_lstm.py
+xxd -i model_weights.bin > jemalloc/src/model_weights.h
+```

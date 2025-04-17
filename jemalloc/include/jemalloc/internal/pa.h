@@ -18,6 +18,8 @@
 #define MAX_SLICES_PER_BLOCK (HUGEPAGE_SIZE / LIFESPAN_SLICE_SIZE)  // 2MB block
 #define MAX_BLOCKS_PER_CLASS 64
 
+extern bool         lifetime_ml_enabled;
+
 /*
  * The page allocator; responsible for acquiring pages of memory for
  * allocations.  It picks the implementation of the page allocator interface
