@@ -9,6 +9,9 @@
         "unistd.h": "c",
         "jemalloc.h": "c",
         "emap.h": "c",
-        "execinfo.h": "c"
+        "execinfo.h": "c",
+        "pai.h": "c",
+        "lockedint.h": "c",
+        "sec.h": "c"
     }
 }
