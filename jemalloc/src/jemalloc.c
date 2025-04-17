@@ -2479,8 +2479,8 @@ compute_size_with_overflow(bool may_overflow, dynamic_opts_t *dopts,
 JEMALLOC_ALWAYS_INLINE int
 imalloc_body(static_opts_t *sopts, dynamic_opts_t *dopts, tsd_t *tsd) {
 
-	printf("\nHELLO_FROM_JEMALLOC\n");
-	fflush(stdout);
+	// printf("\nHELLO_FROM_JEMALLOC\n");
+	// fflush(stdout);
 
 	/* Where the actual allocated memory will live. */
 	void *allocation = NULL;

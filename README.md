@@ -14,6 +14,7 @@ cd ..
 Connect to benchmark.py with:
 
 ```bash
+source venv/bin/activate
 LD_PRELOAD=$(pwd)/jemalloc/lib/libjemalloc.so MALLOC_CONF=background_thread:true ./venv/bin/python benchmark.py
 ```
 
