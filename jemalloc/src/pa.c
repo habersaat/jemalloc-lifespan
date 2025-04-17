@@ -13,7 +13,11 @@
 #include <stdint.h>     // for uint64_t
 
 bool lifetime_ml_enabled = false;
+<<<<<<< HEAD
 bool generate_training_data = true;
+=======
+bool generate_training_data = false;
+>>>>>>> master
 
 size_t ml_total_frees = 0;
 size_t ml_misclassified_frees = 0;
