@@ -8,6 +8,19 @@
 #include "jemalloc/internal/emap.h"
 #include "jemalloc/internal/rtree.h"
 
+#include <execinfo.h>   // for backtrace
+#include <unistd.h>     // for getpid()
+#include <stdint.h>     // for uint64_t
+
+
+static uint64_t hash_stack_trace(void **buffer, int depth) {
+    uint64_t hash = 5381;
+    for (int i = 0; i < depth; ++i) {
+        uintptr_t addr = (uintptr_t)buffer[i];
+        hash = ((hash << 5) + hash) + addr; // djb2 hash
+    }
+    return hash;
+}
 
 static void
 pa_nactive_add(pa_shard_t *shard, size_t add_pages) {
@@ -452,10 +465,25 @@ uint8_t lifespan_class,
 		}
 		assert(edata_arena_ind_get(edata) == shard->ind);
 
-		// TEMP: log to temp log file for testing
-		FILE *f = fopen("./tmp/alloc_classes.log", "a");
+		struct timespec ts;
+		clock_gettime(CLOCK_MONOTONIC, &ts);
+		uint64_t now_ns = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+		nstime_init(&edata->alloc_ts, now_ns);
+
+		// Capture stack trace
+		void *trace_buffer[32];
+		int trace_depth = backtrace(trace_buffer, 32);
+		uint64_t trace_hash = hash_stack_trace(trace_buffer, trace_depth);
+
+		/* Logging for ML lifetime prediction */
+		FILE *f = fopen("./tmp/alloc_metadata.log", "a");
 		if (f != NULL) {
-			fprintf(f, "%p %u\n", edata_addr_get(edata), lifespan_class);
+			fprintf(f, "%p %zu %u %lu %lu\n",
+				edata_addr_get(edata),
+				edata_size_get(edata),
+				lifespan_class,
+				(unsigned long)nstime_ns(&edata->alloc_ts),
+				trace_hash);
 			fclose(f);
 		}
 	}
@@ -515,6 +543,30 @@ void
 pa_dalloc(tsdn_t *tsdn, pa_shard_t *shard, edata_t *edata,
     bool *deferred_work_generated) {
 	emap_remap(tsdn, shard->emap, edata, SC_NSIZES, /* slab */ false);
+
+	// Log deallocation event for ML training
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	uint64_t dealloc_ts = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+
+	// Capture stack trace at deallocation
+	void *trace_buffer[32];
+	int trace_depth = backtrace(trace_buffer, 32);
+	uint64_t trace_hash = hash_stack_trace(trace_buffer, trace_depth);
+
+	// Log to dealloc metadata
+	FILE *f = fopen("./tmp/dealloc_metadata.log", "a");
+	if (f != NULL) {
+		fprintf(f, "%p %zu %u %lu %lu %lu\n",
+			edata_addr_get(edata),
+			edata_size_get(edata),
+			edata_lifespan_get(edata),
+			(unsigned long)nstime_ns(&edata->alloc_ts),
+			dealloc_ts,
+			trace_hash);
+		fclose(f);
+	}
+
 	if (edata_slab_get(edata)) {
 		emap_deregister_interior(tsdn, shard->emap, edata);
 		/*

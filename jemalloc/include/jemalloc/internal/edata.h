@@ -148,6 +148,7 @@ struct edata_s {
 	uint64_t lifespan_timestamp_ns;
 	bool is_slice;
 	lifespan_block_allocator_t *slice_owner;
+	nstime_t alloc_ts;
 
 #define MASK(CURRENT_FIELD_WIDTH, CURRENT_FIELD_SHIFT) ((((((uint64_t)0x1U) << (CURRENT_FIELD_WIDTH)) - 1)) << (CURRENT_FIELD_SHIFT))
 
