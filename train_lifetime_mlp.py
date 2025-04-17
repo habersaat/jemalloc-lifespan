@@ -1,3 +1,155 @@
+# #!/usr/bin/env python3
+# """
+# train_lifetime_mlp.py – compact MLP-based lifetime classifier with validation + oversampling
+# """
+
+# import numpy as np, pandas as pd, torch, torch.nn as nn
+# from torch.utils.data import DataLoader, Dataset
+# from pathlib import Path
+# from sklearn.model_selection import train_test_split
+# from sklearn.utils import resample
+# from sklearn.metrics import confusion_matrix
+
+# # ─── Config ────────────────────────────────────────────────────────────
+# ALLOC_LOG   = Path("tmp/alloc_metadata.log")
+# DEALLOC_LOG = Path("tmp/dealloc_metadata.log")
+
+# HASH_BITS        = 15
+# HASH_BUCKETS     = 1 << HASH_BITS
+# SIZE_BUCKET_BITS = 8
+# NUM_CLASSES      = 7
+
+# BATCH  = 128
+# EPOCHS = 8
+# LR     = 3e-3
+
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# # ─── Helpers ───────────────────────────────────────────────────────────
+# def load_log(path, has_dealloc):
+#     cols = (["addr","size","cls","alloc_ts","dealloc_ts","stack"]
+#             if has_dealloc else
+#             ["addr","size","cls","alloc_ts","stack"])
+#     df = pd.read_csv(path, sep=r"\s+", names=cols, dtype=str, engine="python")
+#     df["addr"]     = df["addr"].apply(lambda x: int(x,16))
+#     df["size"]     = df["size"].astype(np.uint32)
+#     df["alloc_ts"] = df["alloc_ts"].astype(np.uint64)
+#     df["stack"]    = df["stack"].astype(np.uint64)
+#     if has_dealloc:
+#         df["dealloc_ts"] = df["dealloc_ts"].astype(np.uint64)
+#     return df
+
+# def lifetime_class(ns):
+#     if ns <   1_000_000:      return 0
+#     if ns <  10_000_000:      return 1
+#     if ns < 100_000_000:      return 2
+#     if ns < 500_000_000:      return 3
+#     if ns < 2_000_000_000:    return 4
+#     if ns < 5_000_000_000:    return 5
+#     return 6
+
+# # ─── Load + Merge ──────────────────────────────────────────────────────
+# alloc_df   = load_log(ALLOC_LOG,  False)
+# dealloc_df = load_log(DEALLOC_LOG, True)
+
+# merged = pd.merge(alloc_df, dealloc_df[["addr","dealloc_ts"]], on="addr", how="inner")
+# merged["lifetime_ns"] = merged["dealloc_ts"] - merged["alloc_ts"]
+# merged["label"]       = merged["lifetime_ns"].apply(lifetime_class).astype(np.int64)
+
+# stack_np = merged["stack"].to_numpy(np.uint64)
+# merged["hash_id"] = ((stack_np ^ (stack_np >> 32)) & 0xFF).astype(np.int32)
+# size_np = merged["size"].to_numpy(np.uint32)
+# merged["size_id"] = (size_np >> SIZE_BUCKET_BITS).astype(np.int32)
+
+# print("Original class distribution:")
+# print(merged['label'].value_counts().sort_index())
+
+# # ─── Balance the Dataset ───────────────────────────────────────────────
+# dfs = [merged[merged['label'] == i] for i in range(NUM_CLASSES)]
+# max_n = max(len(d) for d in dfs)
+# balanced_df = pd.concat([
+#     resample(df, replace=True, n_samples=max_n, random_state=42)
+#     for df in dfs
+# ])
+# balanced_df = balanced_df.sample(frac=1, random_state=42).reset_index(drop=True)
+
+# print("Balanced class distribution:")
+# print(balanced_df['label'].value_counts().sort_index())
+
+# # ─── Dataset ───────────────────────────────────────────────────────────
+# class LifetimeDS(Dataset):
+#     def __init__(self, df):
+#         self.h = torch.from_numpy(df["hash_id"].to_numpy(np.int32))
+#         self.s = torch.from_numpy(df["size_id"].to_numpy(np.int32))
+#         self.y = torch.from_numpy(df["label"].to_numpy(np.int64))
+#     def __len__(self): return len(self.y)
+#     def __getitem__(self,i): return self.h[i], self.s[i], self.y[i]
+
+# # ─── Train/Val Split ───────────────────────────────────────────────────
+# train_df, val_df = train_test_split(balanced_df, test_size=0.2, stratify=balanced_df["label"], random_state=42)
+# train_dl = DataLoader(LifetimeDS(train_df), batch_size=BATCH, shuffle=True)
+# val_dl   = DataLoader(LifetimeDS(val_df),   batch_size=BATCH)
+
+# # ─── Model ─────────────────────────────────────────────────────────────
+# hash_vocab = 256
+# size_vocab = balanced_df["size_id"].max() + 1
+# EMB, HID = 32, 64
+
+# class MLP(nn.Module):
+#     def __init__(self):
+#         super().__init__()
+#         self.eh = nn.Embedding(hash_vocab, EMB)
+#         self.es = nn.Embedding(size_vocab, EMB)
+#         self.fc1 = nn.Linear(EMB * 2, HID)
+#         self.fc2 = nn.Linear(HID, NUM_CLASSES)
+#     def forward(self,h,s):
+#         x = torch.cat([self.eh(h), self.es(s)], dim=-1)
+#         x = torch.relu(self.fc1(x))
+#         return self.fc2(x)
+
+# model = MLP().to(device)
+# opt   = torch.optim.Adam(model.parameters(), lr=LR)
+# crit  = nn.CrossEntropyLoss()
+
+# # ─── Train ─────────────────────────────────────────────────────────────
+# for ep in range(EPOCHS):
+#     model.train()
+#     tr_loss, tr_hit, tr_tot = 0.0, 0, 0
+#     for h,s,y in train_dl:
+#         h,s,y = h.to(device), s.to(device), y.to(device)
+#         opt.zero_grad()
+#         logits = model(h,s)
+#         loss = crit(logits,y)
+#         loss.backward()
+#         opt.step()
+
+#         tr_loss += loss.item() * len(y)
+#         tr_hit += (logits.argmax(1) == y).sum().item()
+#         tr_tot += len(y)
+
+#     model.eval()
+#     all_preds, all_targets = [], []
+#     with torch.no_grad():
+#         for h,s,y in val_dl:
+#             h,s,y = h.to(device), s.to(device), y.to(device)
+#             logits = model(h,s)
+#             all_preds.extend(logits.argmax(1).cpu().tolist())
+#             all_targets.extend(y.cpu().tolist())
+
+#     val_cm = confusion_matrix(all_targets, all_preds, labels=list(range(NUM_CLASSES)))
+#     class_counts = np.bincount(all_targets, minlength=NUM_CLASSES)
+#     class_accs = val_cm.diagonal() / np.maximum(class_counts, 1)
+#     val_acc = np.sum(val_cm.diagonal()) / np.sum(val_cm)
+
+#     print(f"ep {ep+1}/{EPOCHS}:")
+#     print(f"  Train Loss: {tr_loss/tr_tot:.4f}  Train Acc: {tr_hit/tr_tot:.2%}")
+#     print(f"  Val Acc: {val_acc:.2%}")
+#     print("  Per-class Val Acc:", " ".join(f"{acc:.2%}" for acc in class_accs))
+
+# print("\nFinal Validation Confusion Matrix:")
+# print(val_cm)
+
+
 #!/usr/bin/env python3
 """
 train_lifetime_mlp.py – compact MLP-based lifetime classifier

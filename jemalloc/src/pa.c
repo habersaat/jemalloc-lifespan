@@ -12,8 +12,8 @@
 #include <unistd.h>     // for getpid()
 #include <stdint.h>     // for uint64_t
 
-bool lifetime_ml_enabled = true;
-bool generate_training_data = false;
+bool lifetime_ml_enabled = false;
+bool generate_training_data = true;
 
 size_t ml_total_frees = 0;
 size_t ml_misclassified_frees = 0;
