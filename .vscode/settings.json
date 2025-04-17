@@ -11,6 +11,9 @@
         "array": "c",
         "string": "c",
         "string_view": "c",
-        "vector": "c"
+        "vector": "c",
+        "pa.h": "c",
+        "typed_list.h": "c",
+        "rtree.h": "c"
     }
 }

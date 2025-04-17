@@ -20,6 +20,9 @@
 #define EDATA_ALIGNMENT 128
 #define EDATA_LIFETIME_DEFAULT ((uint8_t)255)
 
+struct lifespan_block_allocator_s; // Forward declaration
+typedef struct lifespan_block_allocator_s lifespan_block_allocator_t;
+
 enum extent_state_e {
 	extent_state_active   = 0,
 	extent_state_dirty    = 1,
@@ -144,6 +147,8 @@ struct edata_s {
 	uint8_t lifespan_class;
 	uint64_t lifespan_timestamp_ns;
 	bool is_slice;
+	lifespan_block_allocator_t *slice_owner;
+
 #define MASK(CURRENT_FIELD_WIDTH, CURRENT_FIELD_SHIFT) ((((((uint64_t)0x1U) << (CURRENT_FIELD_WIDTH)) - 1)) << (CURRENT_FIELD_SHIFT))
 
 #define EDATA_BITS_ARENA_WIDTH  MALLOCX_ARENA_BITS
@@ -189,6 +194,9 @@ struct edata_s {
 #define EDATA_BITS_IS_HEAD_WIDTH 1
 #define EDATA_BITS_IS_HEAD_SHIFT  (EDATA_BITS_BINSHARD_WIDTH + EDATA_BITS_BINSHARD_SHIFT)
 #define EDATA_BITS_IS_HEAD_MASK  MASK(EDATA_BITS_IS_HEAD_WIDTH, EDATA_BITS_IS_HEAD_SHIFT)
+
+#define edata_slice_owner_get(e) ((e)->slice_owner)
+#define edata_slice_owner_set(e, owner) ((e)->slice_owner = (owner))
 
 	/* Pointer to the extent that this structure is responsible for. */
 	void			*e_addr;

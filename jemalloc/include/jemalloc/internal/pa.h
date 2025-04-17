@@ -12,7 +12,10 @@
 #include "jemalloc/internal/pai.h"
 #include "jemalloc/internal/sec.h"
 
+#define HUGEPAGE_SIZE ((size_t)(2 * 1024 * 1024))  // 2MB default hugepage size
 #define NUM_LIFESPAN_CLASSES 3
+#define LIFESPAN_SLICE_SIZE (256 * 1024)  // 256KB slices
+#define MAX_SLICES_PER_BLOCK (HUGEPAGE_SIZE / LIFESPAN_SLICE_SIZE)  // 2MB block
 
 /*
  * The page allocator; responsible for acquiring pages of memory for
@@ -74,6 +77,9 @@ typedef struct lifespan_block_allocator_s {
 	size_t offset;
 	nstime_t current_block_ts;
 	int live_slices;
+
+	// Fixed-size array for tracking slices
+	edata_t *slices[MAX_SLICES_PER_BLOCK];
 } lifespan_block_allocator_t;
 
 /*

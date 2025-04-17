@@ -835,7 +835,7 @@ void *lifespan_reclaimer_entry(void *arg) {
     }
 
     while (true) {
-        struct timespec req = { .tv_sec = 1, .tv_nsec = 0 };
+        struct timespec req = { .tv_sec = 0, .tv_nsec = 10 * 1000 * 1000 }; // 10ms
         nanosleep(&req, NULL);
 
         tsdn_t *tsdn = tsdn_fetch();

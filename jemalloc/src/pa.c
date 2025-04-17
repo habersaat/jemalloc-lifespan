@@ -134,13 +134,22 @@ pa_get_pai(pa_shard_t *shard, edata_t *edata) {
 	    ? &shard->pac.pai : &shard->hpa_sec.pai);
 }
 
-#define HUGEPAGE_SIZE ((size_t)(2 * 1024 * 1024))  // 2MB default hugepage size
+
+
 
 static edata_t *
 try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
                          uint8_t lifespan_class, size_t size,
                          size_t alignment, bool zero) {
 	assert(lifespan_class < NUM_LIFESPAN_CLASSES);
+
+	// Reject requests larger than slice size
+	if (size > LIFESPAN_SLICE_SIZE) {
+		printf("[jemalloc] ❌ Allocation size %zu exceeds fixed slice size %d\n",
+		       size, LIFESPAN_SLICE_SIZE);
+		return NULL;
+	}
+							
 	lifespan_block_allocator_t *block = &shard->lifespan_blocks[lifespan_class];
 
 	while (true) {
@@ -174,6 +183,7 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 				           shard->ind);
 
 				edata_lifespan_set(slice, lifespan_class);
+				edata_slice_owner_set(slice, block);
 
     			// Set individual allocation timestamp for slice
 				struct timespec ts;
@@ -189,6 +199,14 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 				
 				// Mark as slice to avoid confusion with full blocks during expiration
 				edata_mark_as_slice(slice);
+
+				// Add to slices array
+				for (size_t i = 0; i < MAX_SLICES_PER_BLOCK; ++i) {
+					if (block->slices[i] == NULL) {
+						block->slices[i] = slice;
+						break;
+					}
+				}
 
 				return slice;
 			}
@@ -242,7 +260,7 @@ void pa_expire_lifespan_blocks(tsdn_t *tsdn, pa_shard_t *shard) {
 	printf("\n================================\n");
     printf("[jemalloc] 🔄 Reclaimer running at %lu ns\n", now_ns);
 
-    for (int class_id = 0; class_id < NUM_LIFESPAN_CLASSES; ++class_id) {
+    for (int class_id = NUM_LIFESPAN_CLASSES - 1; class_id >= 0; --class_id) {
 		// printf("[jemalloc] Expiring lifespan blocks for class %d\n", class_id);
 		
         lifespan_block_allocator_t *block = &shard->lifespan_blocks[class_id];
@@ -278,15 +296,17 @@ void pa_expire_lifespan_blocks(tsdn_t *tsdn, pa_shard_t *shard) {
                class_id, elapsed_ns, deadline_ns);
 
         if (elapsed_ns > deadline_ns) {
-            printf("[jemalloc] 🔥 Expiring block for class %d at base = %p (age = %lu ns)\n",
+            printf("[jemalloc] 🔥 Attempting to expire block for class %d at base = %p (age = %lu ns)\n",
                    class_id, base, elapsed_ns);
+			uint8_t block_lc = edata_lifespan_get(edata);
 
-            // Extra check: Make sure class matches
-            if (edata_lifespan_get(edata) != class_id) {
-                printf("[jemalloc] ❗ Lifespan class mismatch for edata in class %d\n", class_id);
-                block->current_block = NULL;
-                continue;
-            }
+            // Extra check: Make sure class matches (it won't after promotion)
+            if (block_lc != class_id) {
+				printf("[jemalloc] ❌ Lifespan class mismatch: expected %d, got %d\n",
+					class_id, block_lc);
+				block->current_block = NULL;
+				continue;
+			}
 
             ecache_t *reuse_cache = &shard->lifespan_reuse[class_id];
 
@@ -304,9 +324,44 @@ void pa_expire_lifespan_blocks(tsdn_t *tsdn, pa_shard_t *shard) {
 				block->offset = 0;
 				printf("[jemalloc] ✅ Reclaimed expired block for class %d\n", class_id);
 			} else {
-				// Can't reclaim yet — still active slices
-				printf("[jemalloc] 🚫 Skipping expiration: %d live slices remain for class %d\n",
-					   block->live_slices, class_id);
+				// PROMOTE BLOCK TO NEXT CLASS
+				if (block_lc + 1 < NUM_LIFESPAN_CLASSES) {
+					uint8_t promoted_class = block_lc + 1;
+
+					// Transfer metadata
+					edata_lifespan_set(edata, promoted_class);
+					shard->lifespan_blocks[promoted_class].current_block = edata;
+					shard->lifespan_blocks[promoted_class].offset = block->offset;
+					shard->lifespan_blocks[promoted_class].live_slices = block->live_slices;
+					
+					// Transfer slices to the new block
+					for (size_t i = 0; i < MAX_SLICES_PER_BLOCK; ++i) {
+						edata_t *slice = block->slices[i];
+						if (slice != NULL && edata_is_marked_as_slice(slice)) {
+							edata_lifespan_set(slice, promoted_class);
+							edata_slice_owner_set(slice, &shard->lifespan_blocks[promoted_class]);
+					
+							// Also record it in the promoted block’s slice table
+							shard->lifespan_blocks[promoted_class].slices[i] = slice;
+						}
+					}
+
+					// Reset timestamp before clearing source block
+					clock_gettime(CLOCK_MONOTONIC, &ts);
+					uint64_t new_ts = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+					nstime_init(&shard->lifespan_blocks[promoted_class].current_block_ts, new_ts);
+
+					// Now it's safe to clear old class's block metadata
+					block->current_block = NULL;
+					block->offset = 0;
+					block->live_slices = 0;
+					memset(block->slices, 0, sizeof(block->slices));
+
+					printf("[jemalloc] ⬆️ Promoting block from class %d → %d and setting new deadline = %lu ns\n",
+						   block_lc, promoted_class, lifespan_class_deadlines_ns[promoted_class]);
+				} else {
+					printf("[jemalloc] 🧍 Block already in longest LC (%d). Will not promote further.\n", block_lc);
+				}
 			}
         }
     }
