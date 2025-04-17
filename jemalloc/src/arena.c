@@ -13,7 +13,7 @@
 #include "jemalloc/internal/util.h"
 
 #include "jemalloc/internal/background_thread_externs.h"
-// #include "class_lookup.h"
+#include "class_lookup.h"
 
 JEMALLOC_DIAGNOSTIC_DISABLE_SPURIOUS
 
@@ -336,15 +336,16 @@ arena_extent_alloc_large(tsdn_t *tsdn, arena_t *arena, size_t usize,
 	szind_t szind = sz_size2index(usize);
 	size_t esize = usize + sz_large_pad;
 
-	printf("[jemalloc] arena_extent_alloc_large: usize=%zu esize=%zu\n", usize, esize);
+	printf("[jemalloc] arena_extent_alloc_large: usize=%zu esize=%zu. ML inference is %s\n",
+		usize, esize, (lifetime_ml_enabled ? "enabled" : "disabled"));
 
 	// Assign lifespan class
 	uint8_t lifespan_class;
 	if (lifetime_ml_enabled) {
-		// size_t size_bucket = usize >> SIZE_BUCKET_BITS;
-		// size_t hash_bucket = (stack_hash ^ (stack_hash >> 32)) & (HASH_BUCKETS - 1);
-		// lifespan_class = class_lookup[size_bucket][hash_bucket];
-		lifespan_class = rand() % NUM_LIFESPAN_CLASSES;
+		uintptr_t trace_hash = (uintptr_t)__builtin_return_address(0);
+		uint32_t sz_bucket = usize >> 8;  		// divide by 256
+		uint32_t h_bucket  = trace_hash & 0xFF;  // or 0xFFFF & >> etc based on LSTM training
+		uint8_t lifespan_class = class_lookup[sz_bucket % 64][h_bucket];
 	} else {
 		lifespan_class = rand() % NUM_LIFESPAN_CLASSES;
 	}

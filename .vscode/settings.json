@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "stdint.h": "c",
+        "safety_check.h": "c",
+        "background_thread_externs.h": "c",
+        "rtree.h": "c"
+    }
+}

@@ -11,6 +11,7 @@ make -j
 cd ..
 ```
 
+NOT SURE IF WE'LL USE THIS YET BC PYMALLOC SUCKS
 Connect to benchmark.py with:
 
 ```bash
@@ -18,7 +19,7 @@ source venv/bin/activate
 LD_PRELOAD=./jemalloc/lib/libjemalloc.so venv/bin/python3 benchmark.py
 ```
 
-Run the following from the root `jemalloc-lifespan/` directory:
+To run correctness tests, run from the `jemalloc-lifespan/` directory:
 
 ```bash
 gcc test.c -o test \
@@ -58,11 +59,18 @@ gcc test_lifespan_stress.c -o test_lifespan_stress \
 
 
 
-ML:
+Ml Stuff I'm working on
+- First run of synthetic_benchmark run with lifetime_ml_enabled as false
+- then train using the lstm model
+- finally, run synthetic_benchmark with lifetime_ml_enabled as true
 
 ```bash
 gcc synthetic_benchmark.c -o synthetic_benchmark   -I jemalloc/include   jemalloc/lib/libjemalloc.a
 ./synthetic_benchmark
 python3 train_lifetime_lstm.py
-xxd -i model_weights.bin > jemalloc/src/model_weights.h
+```
+SET lifetime_ml_enabled TO TRUE
+```bash
+gcc synthetic_benchmark.c -o synthetic_benchmark   -I jemalloc/include   jemalloc/lib/libjemalloc.a
+./synthetic_benchmark
 ```

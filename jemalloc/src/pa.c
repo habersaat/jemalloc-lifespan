@@ -12,7 +12,7 @@
 #include <unistd.h>     // for getpid()
 #include <stdint.h>     // for uint64_t
 
-bool lifetime_ml_enabled = false;
+bool lifetime_ml_enabled = true;
 
 
 static uint64_t hash_stack_trace(void **buffer, int depth) {
