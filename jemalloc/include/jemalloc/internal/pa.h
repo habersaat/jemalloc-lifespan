@@ -13,10 +13,16 @@
 #include "jemalloc/internal/sec.h"
 
 #define HUGEPAGE_SIZE ((size_t)(2 * 1024 * 1024))  // 2MB default hugepage size
-#define NUM_LIFESPAN_CLASSES 3
+#define NUM_LIFESPAN_CLASSES 7
 #define LIFESPAN_SLICE_SIZE (256 * 1024)  // 256KB slices
 #define MAX_SLICES_PER_BLOCK (HUGEPAGE_SIZE / LIFESPAN_SLICE_SIZE)  // 2MB block
-#define MAX_BLOCKS_PER_CLASS 8
+#define MAX_BLOCKS_PER_CLASS 64
+
+extern bool         lifetime_ml_enabled;
+extern bool 		generate_training_data;
+
+extern size_t ml_total_frees;
+extern size_t ml_misclassified_frees;
 
 /*
  * The page allocator; responsible for acquiring pages of memory for
@@ -63,9 +69,23 @@ struct pa_shard_stats_s {
 
 // Expected lifetime deadlines per class, in nanoseconds
 static const uint64_t lifespan_class_deadlines_ns[NUM_LIFESPAN_CLASSES] = {
-    10ULL * 1000 * 1000,    // 10ms for short-lived class (class 0)
-    100ULL * 1000 * 1000,   // 100ms for medium-lived class (class 1)
-    1000ULL * 1000 * 1000   // 1s for long-lived class (class 2)
+    1ULL * 1000 * 1000,        // 1ms
+    10ULL * 1000 * 1000,       // 10ms
+    100ULL * 1000 * 1000,      // 100ms
+    500ULL * 1000 * 1000,      // 500ms
+    2000ULL * 1000 * 1000,     // 2s
+    5000ULL * 1000 * 1000,     // 5s
+    10000ULL * 1000 * 1000     // 10s
+};
+
+static const uint64_t lifespan_class_lower_ns[NUM_LIFESPAN_CLASSES] = {
+    0,                    // Class 0: [0 ns,      1ms)
+    1ULL * 1000 * 1000,   // Class 1: [1ms,      10ms)
+    10ULL * 1000 * 1000,  // Class 2: [10ms,    100ms)
+    100ULL * 1000 * 1000, // Class 3: [100ms,   500ms)
+    500ULL * 1000 * 1000, // Class 4: [500ms,     2s)
+    2000ULL * 1000 * 1000,// Class 5: [2s,        5s)
+    5000ULL * 1000 * 1000 // Class 6: [5s,       10s)
 };
 
 typedef struct lifespan_block_s {

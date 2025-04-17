@@ -13,6 +13,7 @@
 #include "jemalloc/internal/util.h"
 
 #include "jemalloc/internal/background_thread_externs.h"
+#include "class_lookup.h"
 
 JEMALLOC_DIAGNOSTIC_DISABLE_SPURIOUS
 
@@ -335,10 +336,20 @@ arena_extent_alloc_large(tsdn_t *tsdn, arena_t *arena, size_t usize,
 	szind_t szind = sz_size2index(usize);
 	size_t esize = usize + sz_large_pad;
 
-	printf("[jemalloc] arena_extent_alloc_large: usize=%zu esize=%zu\n", usize, esize);
+	printf("[jemalloc] arena_extent_alloc_large: usize=%zu esize=%zu. ML inference is %s\n",
+		usize, esize, (lifetime_ml_enabled ? "enabled" : "disabled"));
 
-	// TEMP: Randomly assign a class for testing
-	uint8_t lifespan_class = rand() % NUM_LIFESPAN_CLASSES;
+	// Assign lifespan class
+	uint8_t lifespan_class;
+	if (lifetime_ml_enabled) {
+		uintptr_t trace_hash = (uintptr_t)__builtin_return_address(0);
+		uint32_t sz_bucket = usize >> 8;
+		uint32_t h_bucket = (trace_hash ^ (trace_hash >> 32)) & 0xFF;
+		lifespan_class = class_lookup[sz_bucket % 64][h_bucket];
+		// printf("[jemalloc] LIFESPAN CLASS: %u\n", lifespan_class);
+	} else {
+		lifespan_class = rand() % NUM_LIFESPAN_CLASSES;
+	}
 
 	bool guarded = san_large_extent_decide_guard(tsdn,
 	    arena_get_ehooks(arena), esize, alignment);

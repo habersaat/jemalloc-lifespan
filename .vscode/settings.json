@@ -1,0 +1,17 @@
+{
+    "files.associations": {
+        "stdint.h": "c",
+        "safety_check.h": "c",
+        "background_thread_externs.h": "c",
+        "rtree.h": "c",
+        "san.h": "c",
+        "base.h": "c",
+        "unistd.h": "c",
+        "jemalloc.h": "c",
+        "emap.h": "c",
+        "execinfo.h": "c",
+        "pai.h": "c",
+        "lockedint.h": "c",
+        "sec.h": "c"
+    }
+}

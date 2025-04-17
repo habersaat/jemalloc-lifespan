@@ -183,12 +183,21 @@ ecache_dalloc(tsdn_t *tsdn, pac_t *pac, ehooks_t *ehooks, ecache_t *ecache,
 			stats->num_allocs++;
 			stats->total_lifetime_ns += age_ns;
 
-			uint64_t deadline_ns = lifespan_class_deadlines_ns[class_id];
-			if (age_ns > deadline_ns) {
+			ml_total_frees++;
+			uint8_t original_class_id = edata_get_initial_class(edata);
+			uint64_t deadline_ns = lifespan_class_deadlines_ns[original_class_id];
+			uint64_t too_early_ns = lifespan_class_lower_ns[original_class_id];
+			// printf("Original Class ID: %d, Deadline: %lu ns\n",
+				// original_class_id, deadline_ns);
+			if (age_ns > deadline_ns || age_ns < too_early_ns) {
+				ml_misclassified_frees++;
 				stats->num_misclassifications++;
-				printf("[jemalloc] ⚠️ Detected lifespan misclassification at free: class %u, age = %lu ns (deadline = %lu ns)\n",
-				       class_id, age_ns, deadline_ns);
+				printf("[jemalloc] ⚠️ Detected lifespan misclassification at free time!\n");
+				printf("[jemalloc] Total Misclassifications: %lu\n",
+					ml_misclassified_frees);
 			}
+			printf("[jemalloc] Misclassification Rate: %.2f%%\n",
+				(ml_misclassified_frees / (double)ml_total_frees) * 100.0);
 		} else {
 			printf("[jemalloc] ❗ Warning: slice owner was NULL during deallocation\n");
 		}
