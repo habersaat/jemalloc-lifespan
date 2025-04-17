@@ -59,7 +59,7 @@ gcc test_lifespan_stress.c -o test_lifespan_stress \
 
 
 
-Ml Stuff I'm working on
+ML Stuff I'm working on
 - First run of synthetic_benchmark run with lifetime_ml_enabled as false
 - then train using the lstm model
 - finally, run synthetic_benchmark with lifetime_ml_enabled as true

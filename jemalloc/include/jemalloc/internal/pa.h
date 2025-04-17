@@ -19,6 +19,10 @@
 #define MAX_BLOCKS_PER_CLASS 64
 
 extern bool         lifetime_ml_enabled;
+extern bool 		generate_training_data;
+
+extern size_t ml_total_frees;
+extern size_t ml_misclassified_frees;
 
 /*
  * The page allocator; responsible for acquiring pages of memory for
@@ -72,6 +76,16 @@ static const uint64_t lifespan_class_deadlines_ns[NUM_LIFESPAN_CLASSES] = {
     2000ULL * 1000 * 1000,     // 2s
     5000ULL * 1000 * 1000,     // 5s
     10000ULL * 1000 * 1000     // 10s
+};
+
+static const uint64_t lifespan_class_lower_ns[NUM_LIFESPAN_CLASSES] = {
+    0,                    // Class 0: [0 ns,      1ms)
+    1ULL * 1000 * 1000,   // Class 1: [1ms,      10ms)
+    10ULL * 1000 * 1000,  // Class 2: [10ms,    100ms)
+    100ULL * 1000 * 1000, // Class 3: [100ms,   500ms)
+    500ULL * 1000 * 1000, // Class 4: [500ms,     2s)
+    2000ULL * 1000 * 1000,// Class 5: [2s,        5s)
+    5000ULL * 1000 * 1000 // Class 6: [5s,       10s)
 };
 
 typedef struct lifespan_block_s {

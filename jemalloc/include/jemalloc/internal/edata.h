@@ -145,6 +145,7 @@ struct edata_s {
 	 */
 	uint64_t		e_bits;
 	uint8_t lifespan_class;
+	uint8_t initial_lifespan_class;
 	uint64_t lifespan_timestamp_ns;
 	bool is_slice;
 	lifespan_block_allocator_t *slice_owner;
@@ -632,6 +633,15 @@ static inline void edata_mark_as_slice(edata_t *edata) {
 
 static inline bool edata_is_marked_as_slice(edata_t *edata) {
     return edata->is_slice;
+}
+
+static inline void edata_set_initial_class(edata_t *edata, uint8_t class_id) {
+	edata->initial_lifespan_class = class_id;
+}
+
+static inline u_int8_t
+edata_get_initial_class(const edata_t *edata) {
+	return edata->initial_lifespan_class;
 }
 
 /*

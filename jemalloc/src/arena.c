@@ -343,9 +343,10 @@ arena_extent_alloc_large(tsdn_t *tsdn, arena_t *arena, size_t usize,
 	uint8_t lifespan_class;
 	if (lifetime_ml_enabled) {
 		uintptr_t trace_hash = (uintptr_t)__builtin_return_address(0);
-		uint32_t sz_bucket = usize >> 8;  		// divide by 256
-		uint32_t h_bucket  = trace_hash & 0xFF;  // or 0xFFFF & >> etc based on LSTM training
-		uint8_t lifespan_class = class_lookup[sz_bucket % 64][h_bucket];
+		uint32_t sz_bucket = usize >> 8;
+		uint32_t h_bucket = (trace_hash ^ (trace_hash >> 32)) & 0xFF;
+		lifespan_class = class_lookup[sz_bucket % 64][h_bucket];
+		// printf("[jemalloc] LIFESPAN CLASS: %u\n", lifespan_class);
 	} else {
 		lifespan_class = rand() % NUM_LIFESPAN_CLASSES;
 	}

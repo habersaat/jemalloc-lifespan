@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <jemalloc/jemalloc.h>
 
+
 /* ---------- tunables ---------- */
 #define EPOCHS         20     /* how many forward / backward cycles */
 #define SHORT_PER_EP   800    /* per‑epoch short‑lived bufs   (64–128 KB) */
@@ -113,6 +114,7 @@ int main(void) {
     for (int i = 0; i < long_pool_len; i++)
         if (long_live_pool[i].ptr) je_free(long_live_pool[i].ptr);
 
-    puts("\n✅  Benchmark complete – happy training!");
+    puts("\n✅  Benchmark complete.");
+
     return 0;
 }
