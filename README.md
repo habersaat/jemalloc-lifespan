@@ -36,3 +36,15 @@ gcc test_promotion.c -o test_promotion \
   -I jemalloc/include \
   jemalloc/lib/libjemalloc.a
 ```
+
+```bash
+gcc test_multi_promotion.c -o test_multi_promotion \
+  -I jemalloc/include \
+  jemalloc/lib/libjemalloc.a
+```
+
+```bash
+gcc test_lifespan_stress.c -o test_lifespan_stress \
+  -I jemalloc/include \
+  jemalloc/lib/libjemalloc.a
+```

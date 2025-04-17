@@ -158,46 +158,45 @@ ecache_dalloc(tsdn_t *tsdn, pac_t *pac, ehooks_t *ehooks, ecache_t *ecache,
 		arena_t *arena = arena_get(tsdn, arena_ind, false);
 		pa_shard_t *shard = &arena->pa_shard;
 
-		lifespan_block_allocator_t *owner = edata_slice_owner_get(edata);
-		if (owner != NULL) {
-			// Remove from slice list and decrement live_slices
+		lifespan_block_t *owner_block = edata_slice_owner_get(edata);
+		if (owner_block != NULL) {
+			// Remove from slice table
 			for (size_t i = 0; i < MAX_SLICES_PER_BLOCK; ++i) {
-				if (owner->slices[i] == edata) {
-					owner->slices[i] = NULL;
-					owner->live_slices--;
+				if (owner_block->slices[i] == edata) {
+					owner_block->slices[i] = NULL;
+					owner_block->live_slices--;
 					break;
 				}
 			}
 
-			// Get actual class from slice owner pointer
-			size_t owner_class = (size_t)(owner - shard->lifespan_blocks);
+			// Lookup class ID from edata_lifespan_get (accurate post-promotion)
+			uint8_t class_id = edata_lifespan_get(edata);
 
-			// Calculate actual lifetime of this slice
+			// Calculate lifetime of the allocation
 			uint64_t alloc_ts = edata_lifespan_timestamp_get(edata);
 			struct timespec now;
 			clock_gettime(CLOCK_MONOTONIC, &now);
 			uint64_t now_ns = (uint64_t)now.tv_sec * 1000000000ULL + now.tv_nsec;
 			uint64_t age_ns = now_ns - alloc_ts;
 
-			// Update stats and check for misclassification
-			lifespan_class_stats_t *stats = &shard->lifespan_stats[owner_class];
+			lifespan_class_stats_t *stats = &shard->lifespan_stats[class_id];
 			stats->num_allocs++;
 			stats->total_lifetime_ns += age_ns;
 
-			uint64_t deadline_ns = lifespan_class_deadlines_ns[owner_class];
+			uint64_t deadline_ns = lifespan_class_deadlines_ns[class_id];
 			if (age_ns > deadline_ns) {
 				stats->num_misclassifications++;
-				printf("[jemalloc] ⚠️ Detected lifespan misclassification at free: class %zu, age = %lu ns (deadline = %lu ns)\n",
-				       owner_class, age_ns, deadline_ns);
+				printf("[jemalloc] ⚠️ Detected lifespan misclassification at free: class %u, age = %lu ns (deadline = %lu ns)\n",
+				       class_id, age_ns, deadline_ns);
 			}
 		} else {
 			printf("[jemalloc] ❗ Warning: slice owner was NULL during deallocation\n");
 		}
+		return;
 	}
 
 	extent_record(tsdn, pac, ehooks, ecache, edata);
 }
-
 
 edata_t *
 ecache_evict(tsdn_t *tsdn, pac_t *pac, ehooks_t *ehooks,

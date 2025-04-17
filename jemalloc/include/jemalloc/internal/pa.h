@@ -16,6 +16,7 @@
 #define NUM_LIFESPAN_CLASSES 3
 #define LIFESPAN_SLICE_SIZE (256 * 1024)  // 256KB slices
 #define MAX_SLICES_PER_BLOCK (HUGEPAGE_SIZE / LIFESPAN_SLICE_SIZE)  // 2MB block
+#define MAX_BLOCKS_PER_CLASS 8
 
 /*
  * The page allocator; responsible for acquiring pages of memory for
@@ -67,19 +68,22 @@ static const uint64_t lifespan_class_deadlines_ns[NUM_LIFESPAN_CLASSES] = {
     1000ULL * 1000 * 1000   // 1s for long-lived class (class 2)
 };
 
+typedef struct lifespan_block_s {
+	edata_t *block;
+	size_t offset;
+	nstime_t block_ts;
+	int live_slices;
+	edata_t *slices[MAX_SLICES_PER_BLOCK];
+} lifespan_block_t;
+
 /*
  * The block allocator for lifespan classes.  This is a simple allocator that
  * allocates blocks of memory for a given lifespan class, and hands out pointers
  * to the blocks.  It's used for the lifespan reuse caches.
  */
 typedef struct lifespan_block_allocator_s {
-	edata_t *current_block;
-	size_t offset;
-	nstime_t current_block_ts;
-	int live_slices;
-
-	// Fixed-size array for tracking slices
-	edata_t *slices[MAX_SLICES_PER_BLOCK];
+	lifespan_block_t blocks[MAX_BLOCKS_PER_CLASS];
+	size_t count;  // number of active blocks in use
 } lifespan_block_allocator_t;
 
 /*
