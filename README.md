@@ -6,9 +6,15 @@ First, build jemalloc. From the `jemalloc-lifespan/` directory, run:
 cd jemalloc
 make clean
 ./autogen.sh
-./configure --with-jemalloc-prefix=je_ --disable-shared --enable-debug
+./configure --with-jemalloc-prefix=je_ --enable-debug
 make -j
 cd ..
+```
+
+Connect to benchmark.py with:
+
+```bash
+LD_PRELOAD=$(pwd)/jemalloc/lib/libjemalloc.so MALLOC_CONF=background_thread:true ./venv/bin/python benchmark.py
 ```
 
 Run the following from the root `jemalloc-lifespan/` directory:
