@@ -1,60 +1,79 @@
+import torch
 import ctypes
 import time
 import random
-import sys
+import os
 
-# ============================
+# ====================================
 # 🔧 jemalloc stat utilities
-# ============================
+# ====================================
 
 try:
-    jemalloc = ctypes.CDLL("./jemalloc/lib/libjemalloc.so", use_errno=True)
-except OSError as e:
-    print(f"[ERROR] Failed to load jemalloc: {e}")
-    sys.exit(1)
+    jemalloc = ctypes.CDLL("libjemalloc.so", use_errno=True)
 
-def get_stat(stat_name):
-    value = ctypes.c_size_t()
-    size = ctypes.c_size_t(ctypes.sizeof(value))
-    ret = jemalloc.mallctl(stat_name.encode(), ctypes.byref(value), ctypes.byref(size), None, 0)
-    if ret != 0:
-        raise RuntimeError(f"mallctl failed for {stat_name}, ret={ret}")
-    return value.value
+    def get_stat(stat_name):
+        value = ctypes.c_size_t()
+        size = ctypes.c_size_t(ctypes.sizeof(value))
+        ret = jemalloc.mallctl(stat_name.encode(), ctypes.byref(value), ctypes.byref(size), None, 0)
+        if ret != 0:
+            raise RuntimeError(f"mallctl failed for {stat_name}, ret={ret}")
+        return value.value
 
-def print_all_stats(label):
-    print(f"\n🧠 jemalloc stats at: {label}")
-    for stat in ["stats.allocated", "stats.active", "stats.resident"]:
-        try:
-            val = get_stat(stat)
-            print(f"  {stat:<18} = {val:>10} bytes")
-        except Exception as e:
-            print(f"  {stat:<18} = [error: {e}]")
+    def print_all_stats(label):
+        print(f"\n🧠 jemalloc stats at: {label}")
+        for stat in ["stats.allocated", "stats.active", "stats.resident"]:
+            print(f"  {stat:<18} = {get_stat(stat):>10} bytes")
 
-# ============================
-# 🚀 Allocation benchmark
-# ============================
+except OSError:
+    jemalloc = None
+    def print_all_stats(label):
+        print(f"\n(jemalloc stats unavailable at: {label})")
 
-NUM_ALLOC = 1000
-MIN_ALLOC = 64 * 1024
-MAX_ALLOC = 256 * 1024
-MAX_LIFETIME_MS = 2000
+# ====================================
+# 📦 Allocation Helper
+# ====================================
+
+allocated = []
+
+def allocate_tensor(min_kb=64, max_kb=256):
+    size_kb = random.randint(min_kb, max_kb)
+    elements = (size_kb * 1024) // 4  # float32
+    t = torch.zeros(elements, dtype=torch.float32)
+    allocated.append(t)
+    return t
+
+# ====================================
+# 🧪 Main Simulation
+# ====================================
 
 print_all_stats("Start")
 
-allocs = []
+start_time = time.time()
 
-print(f"\n🚀 Starting {NUM_ALLOC} randomized allocations")
-for i in range(NUM_ALLOC):
-    size = random.randint(MIN_ALLOC, MAX_ALLOC)
-    lifetime_ms = random.choice([10, 50, 100, 250, 500, 1000, 2000])
-    ptr = ctypes.cast(jemalloc.je_malloc(size), ctypes.c_void_p)
-    if not ptr:
-        print(f"[{i}] ❌ Allocation failed")
-        continue
-    allocs.append((ptr, size))
-    print(f"[{i}] ✅ Allocated {size} bytes for {lifetime_ms}ms at {hex(ptr.value)}")
-    time.sleep(lifetime_ms / 1000.0)
-    jemalloc.je_free(ptr)
-    print(f"[{i}] 🧹 Freed {hex(ptr.value)}")
+# Phase 1: Burst of short-lived tensors (simulate forward pass)
+for _ in range(1000):
+    t = allocate_tensor(64, 128)
+    if random.random() < 0.5:
+        allocated.pop()  # free early
+    time.sleep(random.uniform(0.0005, 0.001))  # 0.5–1ms delay
+
+# Phase 2: Medium-lived tensors (simulate intermediate features)
+mid_tensors = [allocate_tensor(128, 192) for _ in range(500)]
+time.sleep(0.3)
+del mid_tensors
+
+# Phase 3: Long-lived tensors (simulate parameters or gradients)
+long_tensors = [allocate_tensor(192, 256) for _ in range(100)]
+time.sleep(1.0)
+del long_tensors
+
+# Phase 4: Repeated reuse-like burst
+for _ in range(1000):
+    t = allocate_tensor(64, 128)
+    time.sleep(random.uniform(0.0005, 0.001))
+
+end_time = time.time()
 
 print_all_stats("End")
+
+print(f"\n✅ Simulated workload completed in {end_time - start_time:.2f} seconds.")
