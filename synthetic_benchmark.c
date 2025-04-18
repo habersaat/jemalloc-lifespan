@@ -8,6 +8,58 @@
 #include <pthread.h>
 #include <jemalloc/jemalloc.h>
 
+FILE* csv_file = NULL;        /* File handle for CSV output */
+
+// // Function for the memory monitoring thread
+// void* memory_monitor_thread(void* arg) {
+//     csv_file = fopen("tmp/memory_stats.csv", "w");
+//     if (csv_file == NULL) {
+//         fprintf(stderr, "❌ Failed to open memory_stats.csv\n");
+//         return NULL;
+//     }
+
+//     // Write CSV header
+//     fprintf(csv_file, "timestamp,allocated,active,metadata,resident,mapped\n");
+//     fflush(csv_file);
+
+//     printf("Created new thread\n");
+//     while (1) {
+//         // Get memory statistics using mallctl
+//         uint64_t epoch = 1;
+//         size_t sz = sizeof(epoch);
+//         je_mallctl("epoch", &epoch, &sz, &epoch, sz);
+
+//         size_t allocated, active, metadata, resident, mapped;
+//         sz = sizeof(size_t);
+//         if (je_mallctl("stats.allocated", &allocated, &sz, NULL, 0) == 0
+//             && je_mallctl("stats.active", &active, &sz, NULL, 0) == 0
+//             && je_mallctl("stats.metadata", &metadata, &sz, NULL, 0) == 0
+//             && je_mallctl("stats.resident", &resident, &sz, NULL, 0) == 0
+//             && je_mallctl("stats.mapped", &mapped, &sz, NULL, 0) == 0) {
+
+//             // Get current timestamp
+//             struct timespec ts;
+//             clock_gettime(CLOCK_MONOTONIC, &ts);
+//             uint64_t timestamp = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
+
+//             // Write to CSV
+//             fprintf(csv_file, "%llu,%zu,%zu,%zu,%zu,%zu\n",
+//                 (unsigned long long)timestamp,
+//                 allocated, active, metadata, resident, mapped);
+//             fflush(csv_file);
+//         }
+
+//         usleep(10000);  // Sleep for 10ms
+//     }
+
+//     // Close CSV file (though we'll likely never reach this)
+//     if (csv_file != NULL) {
+//         fclose(csv_file);
+//     }
+
+//     return NULL;
+// }
+
 
 /* ---------- tunables ---------- */
 #define EPOCHS         20     /* how many forward / backward cycles */
@@ -19,7 +71,7 @@
 #define BURST_ALLOCS   3000   /* per thread, 64–96 KB each    */
 
 #define MIN_ALLOC 65536       /* 64 KB  */
-#define MAX_ALLOC 262144      /* 256 KB */
+#define MAX_ALLOC 204800      /* 200 KB */
 
 typedef struct { void *ptr; size_t sz; int freed; } rec_t;
 

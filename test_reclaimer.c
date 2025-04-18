@@ -4,13 +4,17 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define NUM_LIFESPAN_CLASSES 3
+#define NUM_LIFESPAN_CLASSES 7
 #define ALLOC_SIZE (64 * 1024)
 
 uint64_t lifespan_class_deadlines_ns[NUM_LIFESPAN_CLASSES] = {
-    10ULL * 1000 * 1000,    // 10ms for short-lived class (class 0)
-    100ULL * 1000 * 1000,   // 100ms for medium-lived class (class 1)
-    1000ULL * 1000 * 1000   // 1s for long-lived class (class 2)
+    1ULL * 1000 * 1000,        // 1ms
+    10ULL * 1000 * 1000,       // 10ms
+    100ULL * 1000 * 1000,      // 100ms
+    500ULL * 1000 * 1000,      // 500ms
+    2000ULL * 1000 * 1000,     // 2s
+    5000ULL * 1000 * 1000,     // 5s
+    10000ULL * 1000 * 1000     // 10s
 };
 
 int main() {

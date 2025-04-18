@@ -92,7 +92,7 @@ typedef struct lifespan_block_s {
 	edata_t *block;
 	size_t offset;
 	nstime_t block_ts;
-	int live_slices;
+	volatile int live_slices;
 	edata_t *slices[MAX_SLICES_PER_BLOCK];
 } lifespan_block_t;
 

@@ -226,7 +226,7 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 
 	// No space in existing blocks — allocate new block
 	if (allocator->count >= MAX_BLOCKS_PER_CLASS) {
-		// printf("[jemalloc] ❌ Too many blocks in lifespan class %d\n", lifespan_class);
+		// printf("[jemalloc] Too many blocks in lifespan class %d\n", lifespan_class);
 		return NULL;
 	}
 
@@ -256,7 +256,7 @@ try_lifespan_block_alloc(tsdn_t *tsdn, pa_shard_t *shard,
 	printf("[jemalloc] 🆕 Allocated new 2MB block for lifespan class %u at %p (ts = %lu ns)\n",
 	       lifespan_class, edata_base_get(new_edata), ts_ns);
 
-	// Instead of recursion, allocate from the new block directly
+	// allocate from the new block directly
 	size_t base = (size_t)edata_base_get(new_edata);
 	size_t aligned_offset = ALIGNMENT_CEILING(0, alignment);  // offset is 0
 
@@ -312,11 +312,11 @@ void pa_expire_lifespan_blocks(tsdn_t *tsdn, pa_shard_t *shard) {
     uint64_t now_ns = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 
     // printf("\n================================\n");
-    // printf("[jemalloc] 🔄 Reclaimer running at %lu ns for shard = %p\n", now_ns, (void*)shard); 
+    // printf("[jemalloc] Reclaimer running at %lu ns for shard = %p\n", now_ns, (void*)shard); 
 
     for (int class_id = NUM_LIFESPAN_CLASSES - 1; class_id >= 0; --class_id) {
         lifespan_block_allocator_t *allocator = &shard->lifespan_blocks[class_id];
-        // printf("[jemalloc] 📦 [shard %p] Lifespan class %d has %d active blocks\n",
+        // printf("[jemalloc] [shard %p] Lifespan class %d has %d active blocks\n",
 		// 	(void*)shard, class_id, allocator->count);
 
         for (ssize_t i = allocator->count - 1; i >= 0; --i) {
@@ -329,7 +329,7 @@ void pa_expire_lifespan_blocks(tsdn_t *tsdn, pa_shard_t *shard) {
             uint64_t elapsed_ns = now_ns - nstime_ns(&block->block_ts);
             uint64_t deadline_ns = lifespan_class_deadlines_ns[class_id];
 
-            // printf("[jemalloc] ⏳ class %d block %zd age = %lu ns (deadline = %lu ns)\n",
+            // printf("[jemalloc] class %d block %zd age = %lu ns (deadline = %lu ns)\n",
             //        class_id, i, elapsed_ns, deadline_ns);
 
             if (elapsed_ns <= deadline_ns) {
@@ -337,7 +337,7 @@ void pa_expire_lifespan_blocks(tsdn_t *tsdn, pa_shard_t *shard) {
             }
 
             if (block->live_slices == 0) {
-                // ✅ Reclaim block
+                // Reclaim block
                 printf("[jemalloc] 🔥 Reclaiming expired block for class %d (block %zd)\n", class_id, i);
 
 				// Invalidate slice list before freeing block
@@ -368,14 +368,14 @@ void pa_expire_lifespan_blocks(tsdn_t *tsdn, pa_shard_t *shard) {
                 continue;
             }
 
-            // 🚀 Promote to next longer class if needed
+            // Promote to next longer class if needed
             uint8_t block_lc = edata_lifespan_get(edata);
             if (block_lc + 1 < NUM_LIFESPAN_CLASSES) {
                 uint8_t promoted_class = block_lc + 1;
                 lifespan_block_allocator_t *dest_alloc = &shard->lifespan_blocks[promoted_class];
 
                 if (dest_alloc->count >= MAX_BLOCKS_PER_CLASS) {
-                    // printf("[jemalloc] 🚫 Can't promote — class %u full\n", promoted_class);
+                    // printf("[jemalloc] Can't promote — class %u full\n", promoted_class);
                     continue;
                 }
 
@@ -408,11 +408,11 @@ void pa_expire_lifespan_blocks(tsdn_t *tsdn, pa_shard_t *shard) {
                     allocator->blocks[i] = allocator->blocks[allocator->count];
                 }
 
-                // printf("[jemalloc] ⬆️ Promoted block from class %d → %d and set new deadline = %lu ns\n",
+                // printf("[jemalloc] Promoted block from class %d → %d and set new deadline = %lu ns\n",
                     //    class_id, promoted_class, lifespan_class_deadlines_ns[promoted_class]);
                 continue;
             } else {
-                // printf("[jemalloc] 🧍 Block already in longest LC (%d). Skipping.\n", class_id);
+                // printf("[jemalloc] Block already in longest LC (%d). Skipping.\n", class_id);
             }
         }
     }
@@ -441,11 +441,11 @@ uint8_t lifespan_class,
 		edata = try_lifespan_block_alloc(tsdn, shard, lifespan_class, size, alignment, zero);
 
 		if (edata != NULL) {
-			// printf("[jemalloc] ✅ Reused slice from lifespan block class %u at %p\n",
+			// printf("[jemalloc] Reused slice from lifespan block class %u at %p\n",
 				// lifespan_class, edata_base_get(edata));
 			fflush(stdout);
 		} else {
-			// printf("[jemalloc] ❌ Slicing failed for class %u — falling back to reuse/ecache\n",
+			// printf("[jemalloc] Slicing failed for class %u — falling back to reuse/ecache\n",
 				// lifespan_class);
 			fflush(stdout);
 		}
