@@ -1,3 +1,7 @@
+## Video Demo
+
+https://www.youtube.com/watch?v=VXPLSyxxCYo
+
 ## Compiling `test.c` with the locally modified jemalloc
 
 First, build jemalloc. From the `jemalloc-lifespan/` directory, run:
